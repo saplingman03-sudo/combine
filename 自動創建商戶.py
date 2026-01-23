@@ -503,8 +503,7 @@ class MerchantTool(tk.Tk):
             m_phone = data["phone"].strip()     # 聯繫人電話
             merchant_name = data["name"].strip()  
             m_acc_stripped = self.strip_tail_digits(m_acc_raw)
-            # 2. 針對您提供的元素進行填寫
-            # 方式 A：使用 Playwright 標準 fill (推薦，最接近真實操作)
+            
             admin_name_ipt = dlg_admin.locator('input[placeholder="請輸入管理員名稱"]')
             admin_name_ipt.fill(merchant_name)
             dlg_admin.locator('input[placeholder="請輸入登录账户"]').fill(m_acc_stripped)
