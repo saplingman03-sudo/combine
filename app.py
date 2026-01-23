@@ -1,30 +1,52 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import subprocess
-import sys
-from pathlib import Path
+import os, sys
 
-BASE_DIR = Path(__file__).parent
+def base_dir():
+    # 永遠回到「啟動器所在資料夾」
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)   # app.exe 所在資料夾
+    return os.path.dirname(os.path.abspath(__file__))
 
-# 你的舊工具檔名（照你目前專案看起來就是這三個）
 TOOLS = [
-    ("對帳工具", "自動對帳工具.py"),
-    ("自動創建商戶", "自動創建商戶.py"),
-    ("自動開關遊戲", "自動開關遊戲.py"),
+    ("對帳工具", "對帳工具"),
+    ("自動創建商戶", "創建商戶"),
+    ("自動開關遊戲", "開關遊戲"),
 ]
 
-def launch_py_file(py_filename: str):
-    """用新的 Python 行程開啟舊工具（最穩）"""
-    target = BASE_DIR / py_filename
-    if not target.exists():
-        messagebox.showerror("找不到檔案", f"找不到：{target}")
-        return
+def open_tool(name_no_ext: str):
+    folder = base_dir()
 
-    try:
-        # 用同一個 Python 執行器（避免環境不同）
-        subprocess.Popen([sys.executable, str(target)], cwd=str(BASE_DIR))
-    except Exception as e:
-        messagebox.showerror("啟動失敗", str(e))
+    exe_path = os.path.join(folder, f"{name_no_ext}.exe")
+    py_path  = os.path.join(folder, f"{name_no_ext}.py")
+
+    # ① 先 try exe
+    if os.path.exists(exe_path):
+        try:
+            subprocess.Popen([exe_path], cwd=folder)
+            return
+        except Exception as e:
+            messagebox.showerror("啟動 exe 失敗", str(e))
+            return
+
+    # ② 再 try py
+    if os.path.exists(py_path):
+        try:
+            # 優先用同資料夾的 venv python
+            venv_py = os.path.join(folder, ".venv", "Scripts", "python.exe")
+            python_bin = venv_py if os.path.exists(venv_py) else sys.executable
+            subprocess.Popen([python_bin, py_path], cwd=folder)
+            return
+        except Exception as e:
+            messagebox.showerror("啟動 py 失敗", str(e))
+            return
+
+    # ③ 都沒有
+    messagebox.showerror(
+        "找不到工具",
+        f"同資料夾找不到：\n{name_no_ext}.exe\n或\n{name_no_ext}.py"
+    )
 
 def main():
     root = tk.Tk()
@@ -34,15 +56,20 @@ def main():
     frm = ttk.Frame(root, padding=16)
     frm.pack(fill="both", expand=True)
 
-    title = ttk.Label(frm, text="請選擇要開啟的工具", font=("Microsoft JhengHei", 16))
-    title.pack(pady=(0, 18))
+    ttk.Label(frm, text="請選擇要開啟的工具", font=("Microsoft JhengHei", 16)).pack(pady=(0, 18))
 
-    for label, filename in TOOLS:
-        btn = ttk.Button(frm, text=label, command=lambda f=filename: launch_py_file(f))
-        btn.pack(fill="x", pady=8, ipady=8)
+    for label, name in TOOLS:
+        ttk.Button(
+            frm,
+            text=label,
+            command=lambda n=name: open_tool(n)
+        ).pack(fill="x", pady=8, ipady=8)
 
-    hint = ttk.Label(frm, text="點了會跳出對應的舊工具視窗（各自獨立執行）", foreground="gray")
-    hint.pack(pady=(18, 0))
+    ttk.Label(
+        frm,
+        text="會優先啟動 exe，沒有才使用 py",
+        foreground="gray"
+    ).pack(pady=(18, 0))
 
     root.mainloop()
 
