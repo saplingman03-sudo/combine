@@ -10,7 +10,7 @@ def base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 TOOLS = [
-    ("對帳工具", "對帳工具"),
+    ("自動對帳工具", "對帳工具"),
     ("自動創建商戶", "創建商戶"),
     ("自動開關遊戲", "開關遊戲"),
 ]
