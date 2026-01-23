@@ -35,6 +35,8 @@ SYS_MENU_TEXT = "系統設置"
 ROLE_TEXT     = "角色"
 ADD_ROLE_TEXT = "新增角色"
 ROLE_DIALOG_TEXT = "新增角色"
+ADMIN="管理员"
+ADMIN_ADD="添加管理員"
 
 # 權限樹：展開「財務帳單」，勾「上下分交班中心」
 FIN_NODE_TEXT  ="財務賬單"
@@ -326,6 +328,7 @@ class MerchantTool(tk.Tk):
             return digits[tens] + "十"     # 20,30...
         return digits[tens] + "十" + digits[ones]  # 21~99
 
+
     def run_open_merchant_site(self):
         try:
             self.write_log("🚀 啟動 Playwright（商戶後台：建角色）")
@@ -405,7 +408,7 @@ class MerchantTool(tk.Tk):
             ).first.click()
             page.wait_for_timeout(500)
             self.write_log("🟡 已完成（先不按確定，停在畫面）")
-            dlg.locator('button:has-text("確定")').click()
+            dlg.locator('button:has-text("取消")').click()
 
             self.write_log("➡️ 機器管理")
             page.click('span:has-text("機器管理")')
@@ -482,6 +485,14 @@ class MerchantTool(tk.Tk):
 
                 self.write_log(f"🟡 第{seq}台已填好：請你手動按『確認』(我不自動按)")
             # 你手動按確認後，彈窗會關掉，程式才做下一台
+            page.wait_for_timeout(800)
+            self.write_log("➡️ 管理员")
+            page.click(f'span:has-text("{ADMIN}")')
+            page.wait_for_timeout(800)
+            self.write_log("➡️ 添加管理員")
+            page.click(f'span:has-text("{ADMIN_ADD}")')
+            page.wait_for_timeout(800)
+
             def open_add_machine_dialog(page):
                 # 1) 先確保上一個 dialog 已經真的關掉（如果還在）
                 try:
@@ -496,6 +507,7 @@ class MerchantTool(tk.Tk):
 
                 # 3) 等新的 dialog 出現
                 page.wait_for_selector('.el-dialog:has-text("新增機器")', state="visible", timeout=10000)
+
 
 
         except Exception as e:
