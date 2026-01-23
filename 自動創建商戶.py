@@ -493,6 +493,41 @@ class MerchantTool(tk.Tk):
             page.click(f'span:has-text("{ADMIN_ADD}")')
             page.wait_for_timeout(800)
 
+            # 1. 定位「添加管理員」或「新增管理員」的彈窗
+            # 根據您提供的 placeholder 定位該 dialog
+            dlg_admin = page.locator('.el-dialog:has-text("管理員"), .el-dialog:has-text("添加")').last
+            dlg_admin.wait_for(state="visible", timeout=8000)
+            data = self.collect_ui_data()
+            m_acc_raw = data["loginacc"].strip()
+            m_pw    = data["loginpw"].strip()   # 登錄密碼（商戶）
+            m_phone = data["phone"].strip()     # 聯繫人電話
+            merchant_name = data["name"].strip()  
+            m_acc_stripped = self.strip_tail_digits(m_acc_raw)
+            # 2. 針對您提供的元素進行填寫
+            # 方式 A：使用 Playwright 標準 fill (推薦，最接近真實操作)
+            admin_name_ipt = dlg_admin.locator('input[placeholder="請輸入管理員名稱"]')
+            admin_name_ipt.fill(merchant_name)
+            dlg_admin.locator('input[placeholder="請輸入登录账户"]').fill(m_acc_stripped)
+            # 填寫：登錄密碼
+            dlg_admin.locator('input[placeholder="請輸入登录密码"]').fill(m_pw)
+             # 填寫：聯繫電話
+            dlg_admin.locator('input[placeholder="請輸入联系电话"]').fill(m_phone)
+
+            self.write_log("點擊選擇角色下拉選單")
+            # 根據您的截圖，placeholder 是 "請选择角色類型"
+            role_select = dlg_admin.locator('input[placeholder="請选择角色類型"]')
+            role_select.click()
+            
+            # 2. 等待下拉選單動畫完成，並點選「子商戶」
+            # Element UI 的選項通常在 ul.el-select-dropdown__list 裡面
+            self.write_log("選擇角色：子商戶")
+            
+            # 使用 page.locator 而非 dlg_admin，因為下拉選項通常會彈出在 dialog 之外的層級
+            option_sub_merchant = page.locator('li.el-select-dropdown__item:has-text("子商戶")')
+            
+            # 確保選項可見後點擊
+            option_sub_merchant.wait_for(state="visible", timeout=5000)
+            option_sub_merchant.click()
             def open_add_machine_dialog(page):
                 # 1) 先確保上一個 dialog 已經真的關掉（如果還在）
                 try:
