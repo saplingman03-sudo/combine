@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from tkcalendar import DateEntry
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,7 +29,15 @@ SUPER_PASSWORD = "ccycs"
 CONFIG_FILE = "config_settings.json"
 DEBUG = True
 
-
+def norm_name(x):
+    if x is None:
+        return ""
+    s = str(x)
+    # 把全形空白換成半形空白，再 strip
+    s = s.replace("\u3000", " ").strip()
+    # 去掉換行/tab
+    s = s.replace("\n", "").replace("\r", "").replace("\t", "")
+    return s
 # ============================================================
 # 設定存取：記住使用者上次輸入
 # ============================================================
@@ -38,7 +46,10 @@ def save_data():
     cache = {
         "admin_acc": entry_acc.get().strip(),
         "special_configs": special_configs_data,
-        "manual_terminals": entry_terminal.get().strip()
+        "manual_terminals": entry_terminal.get().strip(),
+        "excluded_shops": sorted([norm_name(n) for n in excluded_shops if norm_name(n)])
+
+
     }
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=4)
@@ -68,6 +79,12 @@ def load_data():
         for name, cfg in saved_configs.items():
             day_text = "月底" if cfg["day"] == 0 else "01號"
             special_listbox.insert(tk.END, f"{name} ({day_text} {cfg['hr']}點)")
+        
+        excluded_shops.clear()
+        for n in cache.get("excluded_shops", []):
+            excluded_shops.add(norm_name(n))
+
+
 
     except:
         # 讀檔失敗就忽略，不影響主功能
@@ -166,6 +183,9 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             raise ValueError("無法取得任何店家名稱資料")
 
         df_brand_map = pd.DataFrame(brand_mapping).drop_duplicates(subset=['name'])
+        # ✅ 正規化店名（品牌母表）
+        df_brand_map["name"] = df_brand_map["name"].apply(norm_name)
+
 
         # ========================================================
         # 2) 抓帳務(banknote_log)資料：多頁 + 多執行緒
@@ -231,6 +251,9 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             return x.get('name', "未知") if isinstance(x, dict) else "未知"
 
         full_df['店家'] = full_df['brand'].apply(get_brand_name)
+        # ✅ 正規化店名（交易表）
+        full_df["店家"] = full_df["店家"].apply(norm_name)
+
 
         # 先用 st_dt~ed_dt 篩一次，後面 groupby 再做特殊結算
         df_range_a = full_df[
@@ -318,6 +341,9 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             right_on='name',
             how='left'
         ).drop(columns=['name'])
+        # ✅ 正規化店名（報表表）
+        df_report["店家"] = df_report["店家"].apply(norm_name)
+
 
         # 依創立時間排序(你用作下場順序的近似替代)
         df_report = df_report.sort_values(by='創立時間', ascending=True, na_position='last')
@@ -337,39 +363,39 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
         if df_report.empty:
             messagebox.showwarning("提示", "權限範圍內無符合店家數據")
             return
+        # 🚫 撤店完全排除（B：不管有沒有交易都不顯示）
+        # ========================================================
+
         # ========================================================
         # 在這裡算 missing_names，建立 df_zero，然後 concat 回主表
         # ========================================================
+# ========================================================
+# ✅ 權限母表 df_all（用來補 0 店家）
+# ========================================================
         df_all = df_brand_map.copy()
+        df_all["name"] = df_all["name"].apply(norm_name)
+
+        # 權限過濾（母表）
         if raw_input_acc != SUPER_PASSWORD:
-            df_all = df_all[df_all["管理員帳號"] == fetch_acc]
+            df_all = df_all[df_all["管理員帳號"] == fetch_acc].copy()
 
-        all_names = set(df_all["name"].dropna().astype(str).tolist())
-        shown_names = set(df_report["店家"].dropna().astype(str).tolist())
+        # ✅ 排除清單正規化一次
+        excluded_norm = set(norm_name(x) for x in excluded_shops if norm_name(x))
 
-        df_zero = pd.DataFrame(columns=[
-            '店家', '開分', '投鈔', '洗分',
-            '月初至今日累計營業額', '前日累計額', '今日變化'
-        ])
+        # ✅ 排除要同時套用在「主表」與「母表」
+        if excluded_norm:
+            df_report = df_report[~df_report["店家"].isin(excluded_norm)].copy()
+            df_all = df_all[~df_all["name"].isin(excluded_norm)].copy()
 
         # ========================================================
-        # ✅ 補上未開分店家（帶創立時間），再整體依創立時間排序
+        # ✅ 補上未開分店家（依創立時間排序）
         # ========================================================
-        df_all = df_brand_map.copy()
-        if raw_input_acc != SUPER_PASSWORD:
-            df_all = df_all[df_all["管理員帳號"] == fetch_acc]
-
-        # df_report 已經是權限過濾後的主表（且已有 創立時間/台數/管理員帳號）
         shown = set(df_report["店家"].dropna().astype(str).tolist())
 
-        # 找出未出現的店家：直接用 df_all 來保證帶有「創立時間」
         df_missing = df_all[~df_all["name"].isin(shown)].copy()
-
-        # 依 created_at 排序
         df_missing["創立時間"] = pd.to_datetime(df_missing["創立時間"], errors="coerce")
         df_missing = df_missing.sort_values(by="創立時間", ascending=True, na_position="last")
 
-        # 轉成你主表要的欄位（把 name 改成 店家），其餘金額欄補 0
         df_zero = pd.DataFrame({
             "店家": df_missing["name"].astype(str),
             "開分": 0,
@@ -383,16 +409,13 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             "創立時間": df_missing["創立時間"]
         })
 
-        # 合併回主表
         df_report = pd.concat([df_report, df_zero], ignore_index=True)
 
-        # ✅ 合併後再整體排序，0 店家才會插回正確位置
         df_report["創立時間"] = pd.to_datetime(df_report["創立時間"], errors="coerce")
         df_report = df_report.sort_values(by="創立時間", ascending=True, na_position="last").reset_index(drop=True)
 
-        # missing_names 給右側清單用（順序就是 created_at）
+        # 右側清單用（已依 created_at 排好）
         missing_names = df_zero["店家"].tolist()
-
 
 
         # --- 加總列 ---
@@ -434,7 +457,9 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             ws = writer.sheets["營業狀況"]
         # =========================
         # 1) 該帳號名下「應有店家」
-            df_all = df_brand_map.copy()
+            if excluded_shops:
+                df_all = df_all[~df_all["name"].isin(excluded_shops)].copy()
+
 
             # 注意：你的 df_brand_map 管理員帳號欄是字串 phone
             # fetch_acc 是你用來比對權限的帳號（ahp0369 會映射 jjk888）
@@ -610,6 +635,7 @@ def update_special_count():
     count = len(special_configs_data)
     f_special.config(text=f" 🏪 特殊結算店家清單（共 {count} 家）")
 
+
 # ============================================================
 # UI：主視窗
 # ============================================================
@@ -699,6 +725,48 @@ btn_frame.pack(fill="x", pady=5)
 
 # 全域字典：記錄特殊店家設定
 special_configs_data = {}
+excluded_shops = set()
+
+# ============================================================
+# UI：撤店/排除店家清單（B：完全排除）
+# ============================================================
+f_ex = tk.LabelFrame(root, text=" 🚫 排除店家（撤店/完全不顯示）", padx=10, pady=10)
+f_ex.pack(pady=5, padx=20, fill="x")
+ex_list = tk.Listbox(f_ex, height=5, font=("微軟正黑體", 10))
+ex_list.pack(fill="x", expand=True)
+
+ex_btns = tk.Frame(f_ex)
+ex_btns.pack(fill="x", pady=5)
+
+def refresh_ex_list():
+    ex_list.delete(0, tk.END)
+    for n in sorted(excluded_shops):
+        ex_list.insert(tk.END, n)
+
+def add_ex_shop():
+    name = simpledialog.askstring("新增排除店家", "輸入店家名稱（需與報表店名一致）:")
+    if not name:
+        return
+    name = norm_name(name)
+    if not name:
+        return
+    excluded_shops.add(name)
+    refresh_ex_list()
+    save_data()
+
+def del_ex_shop():
+    sel = ex_list.curselection()
+    if not sel:
+        messagebox.showwarning("提示", "請先點選要刪除的店家")
+        return
+    name = norm_name(ex_list.get(sel[0]))
+    excluded_shops.discard(name)
+    refresh_ex_list()
+    save_data()
+
+
+tk.Button(ex_btns, text="＋ 新增", command=add_ex_shop).pack(side="left", padx=5)
+tk.Button(ex_btns, text="➖ 刪除", command=del_ex_shop).pack(side="left", padx=5)
 
 
 def update_listbox_display():
@@ -820,6 +888,7 @@ special_listbox.bind('<Double-1>', on_double_click)
 
 # 啟動時載入設定
 load_data()
+refresh_ex_list()
 update_special_count()
 
 root.mainloop()

@@ -1,5 +1,5 @@
 {
-    "admin_acc": "ahp0369",
+    "admin_acc": "jjk888",
     "special_configs": {
         "百邑": {
             "day": 1,
@@ -78,5 +78,9 @@
             "hr": 16
         }
     },
-    "manual_terminals": "230"
+    "manual_terminals": "230",
+    "excluded_shops": [
+        "工廠測試",
+        "新三國"
+    ]
 }
