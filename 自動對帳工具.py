@@ -641,7 +641,7 @@ def update_special_count():
 # ============================================================
 root = tk.Tk()
 root.title("王牌財務工具 V2.1")
-root.geometry("450x650")
+root.geometry("450x900")
 
 # --- 管理員帳號 ---
 f_acc = tk.LabelFrame(root, text=" 管理員帳號", padx=10, pady=10)
