@@ -76,12 +76,6 @@ def load_data():
 
 # ============================================================
 # 主流程：抓資料 -> 計算 -> 產 Excel
-# ============================================================
-def write_log(msg):
-    log_text.config(state="normal")
-    log_text.insert(tk.END, msg + "\n")
-    log_text.see(tk.END)  # 自動捲到底
-    log_text.config(state="disabled")
 
 def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_config, manual_terminals):
     """
@@ -357,7 +351,7 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             '店家', '開分', '投鈔', '洗分',
             '月初至今日累計營業額', '前日累計額', '今日變化'
         ])
-        
+
         # ========================================================
         # ✅ 補上未開分店家（帶創立時間），再整體依創立時間排序
         # ========================================================
@@ -439,8 +433,6 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             df_final[display_cols].to_excel(writer, sheet_name="營業狀況", index=False, startrow=3)
             ws = writer.sheets["營業狀況"]
         # =========================
-        # 右側：未開分店家清單
-        # =========================
         # 1) 該帳號名下「應有店家」
             df_all = df_brand_map.copy()
 
@@ -453,30 +445,6 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
 
             # 2) 主表「已出現店家」
             shown_names = set(df_report["店家"].dropna().astype(str).tolist())
-
-            # 4) 寫到 Excel 右側（例如 I4 開始）
-            start_col = 9  # I
-            start_row = 4
-
-            title_cell = ws.cell(row=start_row, column=start_col)
-            title_cell.value = "未開分店家清單"
-            title_cell.font = Font(name="微軟正黑體", bold=True, size=12)
-            title_cell.alignment = Alignment(horizontal="center", vertical="center")
-            ws.merge_cells(start_row=start_row, start_column=start_col, end_row=start_row, end_column=start_col + 2)
-
-            # 內容往下列
-            for i, name in enumerate(missing_names, start=1):
-                c = ws.cell(row=start_row + i, column=start_col)
-                c.value = name
-                c.font = Font(name="微軟正黑體", size=11)
-                c.alignment = Alignment(horizontal="left", vertical="center")
-
-            # 欄寬調整
-            ws.column_dimensions["I"].width = 18
-            ws.column_dimensions["J"].width = 2
-            ws.column_dimensions["K"].width = 2
-            ws.cell(row=start_row+1, column=start_col+1).value = f"共 {len(missing_names)} 家"
-
 
             # ---------- Excel 全域字體 ----------
             ms_font = Font(name='微軟正黑體', size=12)
@@ -832,21 +800,8 @@ btn.pack(pady=20, padx=20, fill="x")
 
 status_label = tk.Label(root, text="就緒", fg="gray")
 status_label.pack()
-# ============================================================
+
 # UI：日誌區（Debug / 流程顯示）
-# ============================================================
-f_log = tk.LabelFrame(root, text=" 執行日誌 ", padx=5, pady=5)
-f_log.pack(padx=10, pady=5, fill="both", expand=True)
-
-log_text = tk.Text(
-    f_log,
-    height=8,
-    font=("Consolas", 9),
-    state="disabled",
-    wrap="word"
-)
-log_text.pack(fill="both", expand=True)
-
 
 # ============================================================
 # Listbox 雙擊：直接進入編輯
