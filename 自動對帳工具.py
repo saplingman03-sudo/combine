@@ -27,6 +27,7 @@ SUPER_PASSWORD = "ccycs"
 
 # --- 本機設定檔 ---
 CONFIG_FILE = "config_settings.json"
+DEBUG = True
 
 
 # ============================================================
@@ -76,6 +77,12 @@ def load_data():
 # ============================================================
 # 主流程：抓資料 -> 計算 -> 產 Excel
 # ============================================================
+def write_log(msg):
+    log_text.config(state="normal")
+    log_text.insert(tk.END, msg + "\n")
+    log_text.see(tk.END)  # 自動捲到底
+    log_text.config(state="disabled")
+
 def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_config, manual_terminals):
     """
     st_dt / ed_dt:
@@ -243,6 +250,12 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
             return
 
         spec_map = special_config if isinstance(special_config, dict) else {}
+        # 預先宣告，避免 UnboundLocalError
+        df_zero = pd.DataFrame(columns=[
+            '店家', '開分', '投鈔', '洗分',
+            '月初至今日累計營業額', '前日累計額', '今日變化'
+        ])
+
 
         report_rows = []
         for brand, _group in df_range_a.groupby('店家'):
@@ -324,6 +337,69 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
         if df_report.empty:
             messagebox.showwarning("提示", "權限範圍內無符合店家數據")
             return
+        if raw_input_acc != SUPER_PASSWORD:
+            df_report = df_report[df_report['管理員帳號'] == fetch_acc]
+
+        if df_report.empty:
+            messagebox.showwarning("提示", "權限範圍內無符合店家數據")
+            return
+        # ========================================================
+        # 在這裡算 missing_names，建立 df_zero，然後 concat 回主表
+        # ========================================================
+        df_all = df_brand_map.copy()
+        if raw_input_acc != SUPER_PASSWORD:
+            df_all = df_all[df_all["管理員帳號"] == fetch_acc]
+
+        all_names = set(df_all["name"].dropna().astype(str).tolist())
+        shown_names = set(df_report["店家"].dropna().astype(str).tolist())
+
+        df_zero = pd.DataFrame(columns=[
+            '店家', '開分', '投鈔', '洗分',
+            '月初至今日累計營業額', '前日累計額', '今日變化'
+        ])
+        
+        # ========================================================
+        # ✅ 補上未開分店家（帶創立時間），再整體依創立時間排序
+        # ========================================================
+        df_all = df_brand_map.copy()
+        if raw_input_acc != SUPER_PASSWORD:
+            df_all = df_all[df_all["管理員帳號"] == fetch_acc]
+
+        # df_report 已經是權限過濾後的主表（且已有 創立時間/台數/管理員帳號）
+        shown = set(df_report["店家"].dropna().astype(str).tolist())
+
+        # 找出未出現的店家：直接用 df_all 來保證帶有「創立時間」
+        df_missing = df_all[~df_all["name"].isin(shown)].copy()
+
+        # 依 created_at 排序
+        df_missing["創立時間"] = pd.to_datetime(df_missing["創立時間"], errors="coerce")
+        df_missing = df_missing.sort_values(by="創立時間", ascending=True, na_position="last")
+
+        # 轉成你主表要的欄位（把 name 改成 店家），其餘金額欄補 0
+        df_zero = pd.DataFrame({
+            "店家": df_missing["name"].astype(str),
+            "開分": 0,
+            "投鈔": 0,
+            "洗分": 0,
+            "月初至今日累計營業額": 0,
+            "前日累計額": 0,
+            "今日變化": 0,
+            "管理員帳號": df_missing["管理員帳號"].astype(str),
+            "台數": pd.to_numeric(df_missing["台數"], errors="coerce").fillna(0).astype(int),
+            "創立時間": df_missing["創立時間"]
+        })
+
+        # 合併回主表
+        df_report = pd.concat([df_report, df_zero], ignore_index=True)
+
+        # ✅ 合併後再整體排序，0 店家才會插回正確位置
+        df_report["創立時間"] = pd.to_datetime(df_report["創立時間"], errors="coerce")
+        df_report = df_report.sort_values(by="創立時間", ascending=True, na_position="last").reset_index(drop=True)
+
+        # missing_names 給右側清單用（順序就是 created_at）
+        missing_names = df_zero["店家"].tolist()
+
+
 
         # --- 加總列 ---
         summary = {
@@ -377,9 +453,6 @@ def run_combined_crawler(st_dt, ed_dt, admin_acc, status_label, btn, special_con
 
             # 2) 主表「已出現店家」
             shown_names = set(df_report["店家"].dropna().astype(str).tolist())
-
-            # 3) 未開分 / 未出現名單
-            missing_names = sorted(list(all_names - shown_names))
 
             # 4) 寫到 Excel 右側（例如 I4 開始）
             start_col = 9  # I
@@ -759,6 +832,20 @@ btn.pack(pady=20, padx=20, fill="x")
 
 status_label = tk.Label(root, text="就緒", fg="gray")
 status_label.pack()
+# ============================================================
+# UI：日誌區（Debug / 流程顯示）
+# ============================================================
+f_log = tk.LabelFrame(root, text=" 執行日誌 ", padx=5, pady=5)
+f_log.pack(padx=10, pady=5, fill="both", expand=True)
+
+log_text = tk.Text(
+    f_log,
+    height=8,
+    font=("Consolas", 9),
+    state="disabled",
+    wrap="word"
+)
+log_text.pack(fill="both", expand=True)
 
 
 # ============================================================
