@@ -137,6 +137,19 @@ class GameApp:
         self.ent_search.pack(side="left", fill="x", expand=True, padx=5)
         self.ent_search.bind("<KeyRelease>", self.filter_games)
 
+        tk.Label(mid_frame, text="平台:").pack(side="left", padx=(10, 2))
+
+        self.platform_combo = ttk.Combobox(
+            mid_frame,
+            state="readonly",
+            width=12,
+            values=["All"]  # 先給 All，之後動態補
+        )
+        self.platform_combo.current(0)
+        self.platform_combo.pack(side="left")
+        self.platform_combo.bind("<<ComboboxSelected>>", self.on_platform_change)
+
+
         tmpl_frame = tk.LabelFrame(self.tab1, text="💾 模板管理")
         tmpl_frame.pack(fill="x", padx=10, pady=5)
         self.tmpl_combo = ttk.Combobox(tmpl_frame, values=list(self.templates.keys()), state="readonly")
@@ -362,6 +375,17 @@ class GameApp:
                 p += 1
 
             self.all_games_data = all_games
+            platforms = set()
+            for g in all_games:
+                pg = g.get("platform_game") or {}
+                p = pg.get("platform")
+                if p:
+                    platforms.add(p)
+
+            platform_list = ["All"] + sorted(platforms)
+            self.platform_combo["values"] = platform_list
+            self.platform_combo.current(0)
+
 
             self.game_data_map = {}
 
@@ -386,6 +410,9 @@ class GameApp:
 
         except Exception as e:
             self.log(f"💥 錯誤: {e}")
+    def on_platform_change(self, event=None):
+        self.current_platform = self.platform_combo.get()
+        self.filter_games()
 
     def refresh_tree(self, data_list):
         for i in self.tree.get_children():
@@ -406,8 +433,27 @@ class GameApp:
     def filter_games(self, event):
         """ 搜尋功能：針對所有載入的遊戲進行過濾 """
         query = self.ent_search.get().lower()
-        filtered = [g for g in self.all_games_data if query in f"{g.get('name','')}{g.get('platform_game',{}).get('platform_name','')}".lower()]
+    def filter_games(self, event=None):
+        query = (self.ent_search.get() or "").lower()
+        platform = self.current_platform
+
+        filtered = []
+
+        for g in self.all_games_data:
+            pg = g.get("platform_game") or {}
+            name = (pg.get("platform_name") or "").lower()
+            p = pg.get("platform")
+
+            if query and query not in name:
+                continue
+
+            if platform != "All" and p != platform:
+                continue
+
+            filtered.append(g)
+
         self.refresh_tree(filtered)
+
 
     def apply_template(self):
         name = self.tmpl_combo.get()

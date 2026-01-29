@@ -70,6 +70,8 @@ class MerchantTool(tk.Tk):
         self._build_ui()
         self.load_cache_to_ui()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.current_platform = "All"
+
 
     # ===== UI =====
     def _build_ui(self):
@@ -408,7 +410,7 @@ class MerchantTool(tk.Tk):
             ).first.click()
             page.wait_for_timeout(500)
             self.write_log("🟡 已完成（先不按確定，停在畫面）")
-            dlg.locator('button:has-text("取消")').click()
+            dlg.locator('button:has-text("確定")').click()
 
             self.write_log("➡️ 機器管理")
             page.click('span:has-text("機器管理")')
