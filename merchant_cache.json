@@ -1,13 +1,13 @@
 {
   "username": "cai888",
   "password": "cai888",
-  "name": "彰化凱吉",
-  "share": "21",
+  "name": "皇室2",
+  "share": "25",
   "single": "100",
   "minwash": "100",
   "phone": "123",
-  "loginacc": "fydzzhkj888",
+  "loginacc": "wphse888",
   "loginpw": "000000",
-  "auto_confirm": true,
+  "auto_confirm": false,
   "permission_mode": "full"
 }

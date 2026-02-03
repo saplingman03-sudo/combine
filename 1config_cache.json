@@ -1,8 +1,16 @@
 {
-    "user": "ardljj888",
+    "user": "jjkyllhz888",
     "pw": "000000",
-    "master_token": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvbWFzdGVyL2xvZ2luIiwiaWF0IjoxNzY4NDUwODc0LCJleHAiOjE3OTk5ODY4NzQsIm5iZiI6MTc2ODQ1MDg3NCwianRpIjoiR2VzU2hBSzUzU2Q1b1ZPSSIsInN1YiI6IjEyIiwicHJ2IjoiMTg4ODk5NDM5MDUwZTVmMzc0MDliMThjYzZhNDk1NjkyMmE3YWIxYiJ9.9qfnhqLBiLzo1kgdrkWLkLo5mjcjIOLN3a264k0wNUk",
+    "master_token": "\nBearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvbWFzdGVyL2xvZ2luIiwiaWF0IjoxNzY4NDUwODc0LCJleHAiOjE3OTk5ODY4NzQsIm5iZiI6MTc2ODQ1MDg3NCwianRpIjoiR2VzU2hBSzUzU2Q1b1ZPSSIsInN1YiI6IjEyIiwicHJ2IjoiMTg4ODk5NDM5MDUwZTVmMzc0MDliMThjYzZhNDk1NjkyMmE3YWIxYiJ9.9qfnhqLBiLzo1kgdrkWLkLo5mjcjIOLN3a264k0wNUk",
     "merchants": [
+        {
+            "user": "168168",
+            "pw": "000000"
+        },
+        {
+            "user": "cgcs001",
+            "pw": "111111"
+        },
         {
             "user": "axylwj888",
             "pw": "000000"
@@ -54,6 +62,11 @@
         {
             "user": "jjkyllbm888",
             "pw": "000000"
+        },
+        {
+            "user": "gcyldd888",
+            "pw": "000000"
         }
-    ]
+    ],
+    "merchant_token": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvYWRtaW4vbG9naW4iLCJpYXQiOjE3Njg0ODYxMzMsImV4cCI6MTgwMDAyMjEzMywibmJmIjoxNzY4NDg2MTMzLCJqdGkiOiI4QnlXaDhCUkJwbU4yN3REIiwic3ViIjoiMTEiLCJwcnYiOiI3MjM0OWFmZmRhMDQ0ZGMyYWQ3MGEzOWVmMTUxNjNlYTY3YTczMzEzIn0.TTeI2CWXX1fP2XYNsdnJhRmeVm2f0XPCtVS7tOJZAc0"
 }
