@@ -1,13 +1,24 @@
 {
   "username": "cai888",
   "password": "cai888",
-  "name": "皇室2",
+  "name": "黑桃",
   "share": "25",
   "single": "100",
   "minwash": "100",
   "phone": "123",
-  "loginacc": "wphse888",
+  "loginacc": "fydzntcjwj888",
   "loginpw": "000000",
-  "auto_confirm": false,
-  "permission_mode": "full"
+  "auto_confirm": true,
+  "permission_mode": "full",
+  "王牌": {
+    "username": "cai888",
+    "password": "cai888"
+  },
+  "last_site": "王牌",
+  "last_platform": "樂多寶",
+  "樂多寶": {
+    "username": "admin",
+    "password": "leduobao"
+  },
+  "contact_name": "111"
 }

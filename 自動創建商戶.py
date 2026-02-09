@@ -6,10 +6,20 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import json
 import os
 import re
+
+from 自動創建商戶 import URL_ADMIN
 #           dlg.locator('button:has-text("取消")').click()  這個要改確定
 # ===== URLs =====
-URL_ADMIN = "https://wpadmin.ldjzmr.top"              # 總站（新增商戶用）
-URL_MERCHANT = "https://wpbrand.ldjzmr.top"      # 商戶後台（建角色用）
+PLATFORMS = {
+    "王牌": {
+        "ADMIN": "https://wpadmin.ldjzmr.top",
+        "MERCHANT": "https://wpbrand.ldjzmr.top"
+    },
+    "樂多寶": {
+        "ADMIN": "https://ldbadmin.ledb.top",
+        "MERCHANT": "https://ldbbrand.ledb.top"
+    }
+}
 
 # ===== selectors: admin login =====
 LOGIN_USERNAME_SEL = 'input[name="username"]'
@@ -29,6 +39,7 @@ PH_MINWASH   = "請輸入最低洗分金額"
 PH_PHONE     = "請輸入聯繫人電話"
 PH_LOGINACC  = "请设置登錄账號"
 PH_LOGINPW   = "请设置登錄密碼"
+PH_CONTACT_NAME = "請輸入聯繫人姓名"
 
 # ===== 商戶後台：系統設置/角色/新增角色 =====
 SYS_MENU_TEXT = "系統設置"
@@ -78,20 +89,34 @@ class MerchantTool(tk.Tk):
         frm = ttk.Frame(self, padding=10)
         frm.pack(fill="both", expand=True)
 
-        # --- 帳密區（總站） ---
+        # --- 1. 先定義容器 cred ---
         cred = ttk.LabelFrame(frm, text="登入資訊（總站）", padding=10)
         cred.pack(fill="x")
 
+        # --- 2. 平台選擇 (放在第 0 欄) ---
+        plat_frame = ttk.Frame(cred)
+        plat_frame.grid(row=0, column=0, sticky="w")
+        
+        ttk.Label(plat_frame, text="平台:").pack(side="left")
+        self.var_platform = tk.StringVar(value="王牌")
+        
+        for p_name in PLATFORMS.keys():
+            ttk.Radiobutton(
+                plat_frame, text=p_name, variable=self.var_platform, 
+                value=p_name, command=self.on_platform_change
+            ).pack(side="left", padx=5)
+
+        # --- 3. 帳號與密碼 (接著放在後面的欄位，實現並排) ---
         self.var_user = tk.StringVar(value="")
         self.var_pass = tk.StringVar(value="")
 
-        ttk.Label(cred, text="帳號").grid(row=0, column=0, sticky="w")
-        ttk.Entry(cred, textvariable=self.var_user, width=28).grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Label(cred, text="帳號:").grid(row=0, column=1, sticky="w", padx=(15, 2))
+        ttk.Entry(cred, textvariable=self.var_user, width=15).grid(row=0, column=2, sticky="w")
 
-        ttk.Label(cred, text="密碼").grid(row=0, column=2, sticky="w", padx=(12, 0))
-        ttk.Entry(cred, textvariable=self.var_pass, show="*", width=28).grid(row=0, column=3, sticky="w", padx=6)
+        ttk.Label(cred, text="密碼:").grid(row=0, column=3, sticky="w", padx=(10, 2))
+        ttk.Entry(cred, textvariable=self.var_pass, show="*", width=15).grid(row=0, column=4, sticky="w")
 
-        # --- 新增商戶欄位 ---
+        # --- 4. 商戶欄位與其他內容 ---
         fields = ttk.LabelFrame(frm, text="新增商戶欄位（先跳過：地域/百家）", padding=10)
         fields.pack(fill="x", pady=(10, 0))
 
@@ -102,6 +127,7 @@ class MerchantTool(tk.Tk):
         self.var_phone     = tk.StringVar(value="")
         self.var_loginacc  = tk.StringVar(value="")   # ✅ 商戶登入帳號
         self.var_loginpw   = tk.StringVar(value="")   # ✅ 商戶登入密碼
+        self.var_contact_name = tk.StringVar(value="")   # 聯繫人姓名（可選）
 
         # --- 機台機器碼（01~N） ---
         mc = ttk.LabelFrame(frm, text="機台機器碼（由上往下 01~N）", padding=10)
@@ -183,6 +209,10 @@ class MerchantTool(tk.Tk):
         ttk.Label(fields, text="登錄密碼（商戶）").grid(row=row, column=0, sticky="w")
         ttk.Entry(fields, textvariable=self.var_loginpw, show="*", width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
 
+        ttk.Label(fields, text="聯繫人姓名（可選）").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Entry(fields, textvariable=self.var_contact_name, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
+        
+
         # --- 控制按鈕 ---
         ctrl = ttk.Frame(frm)
         ctrl.pack(fill="x", pady=(10, 0))
@@ -207,10 +237,33 @@ class MerchantTool(tk.Tk):
         self.log.see("end")
 
     # ===== cache: UI <-> JSON =====
+    def on_platform_change(self):
+            """當切換平台時，強制從快取載入該平台的專屬帳密"""
+            data = load_cache()  # 讀取 JSON
+            plat = self.var_platform.get()
+            
+            # 取得該平台的數據 (例如 data["樂多寶"])
+            plat_data = data.get(plat, {})
+            
+            # 更新 UI 變數
+            self.var_user.set(plat_data.get("username", ""))
+            self.var_pass.set(plat_data.get("password", ""))
+            
+            self.write_log(f"🔄 已切換至 {plat}，載入帳號: {self.var_user.get()}")
+
     def collect_ui_data(self) -> dict:
-        return {
+        # 讀取現有全部緩存
+        full_cache = load_cache()
+        plat = self.var_platform.get()
+        
+        # 更新當前平台的特定帳密
+        full_cache[plat] = {
             "username": self.var_user.get().strip(),
             "password": self.var_pass.get().strip(),
+        }
+        
+        # 其他通用欄位（商戶名、比例等）維持原樣或放在最外層
+        full_cache.update({
             "name": self.var_name.get().strip(),
             "share": self.var_share.get().strip(),
             "single": self.var_single.get().strip(),
@@ -218,9 +271,12 @@ class MerchantTool(tk.Tk):
             "phone": self.var_phone.get().strip(),
             "loginacc": self.var_loginacc.get().strip(),
             "loginpw": self.var_loginpw.get().strip(),
+            "contact_name": self.var_contact_name.get().strip(),
             "auto_confirm": self.var_auto_confirm.get(),
             "permission_mode": self.var_permission_mode.get(),
-        }
+            "last_platform": plat  # 紀錄上次選哪個
+        })
+        return full_cache
 
     def load_cache_to_ui(self):
         data = load_cache()
@@ -233,6 +289,7 @@ class MerchantTool(tk.Tk):
         self.var_phone.set(data.get("phone", ""))
         self.var_loginacc.set(data.get("loginacc", ""))
         self.var_loginpw.set(data.get("loginpw", ""))
+        self.var_contact_name.set(data.get("contact_name", ""))
         self.var_auto_confirm.set(data.get("auto_confirm", True))  # 預設 True
         self.var_permission_mode.set(data.get("permission_mode", "basic"))  # 預設基本模式
         self.write_log("📂 已載入 merchant_cache.json" if data else "📂 尚無緩存檔（第一次使用）")
@@ -280,9 +337,11 @@ class MerchantTool(tk.Tk):
 
     def run_automation(self):
         try:
+            plat = self.var_platform.get()
             data = self.collect_ui_data()
-            user = data["username"]
-            pw   = data["password"]
+            plat_info = data.get(plat, {})
+            user = plat_info.get("username", "")
+            pw = plat_info.get("password", "")
             auto_confirm = data.get("auto_confirm", True)
             
             if not user or not pw:
@@ -296,15 +355,18 @@ class MerchantTool(tk.Tk):
                 "phone": data["phone"],
                 "loginacc": data["loginacc"],
                 "loginpw": data["loginpw"],
+                "contact_name": data["contact_name"]
             }
+            plat = self.var_platform.get()
+            target_url = PLATFORMS[plat]["ADMIN"]  # 動態獲取網址
 
             self.write_log("🚀 啟動 Playwright（總站）")
             play = sync_playwright().start()
             browser = play.chromium.launch(headless=False)
             page = browser.new_page()
 
-            self.write_log(f"🌐 開啟總站：{URL_ADMIN}")
-            page.goto(URL_ADMIN, wait_until="domcontentloaded")
+            self.write_log(f"🌐 開啟{plat}總站：{target_url}")
+            page.goto(target_url, wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
 
             # login
@@ -341,6 +403,7 @@ class MerchantTool(tk.Tk):
             dlg_fill(PH_PHONE, payload["phone"])
             dlg_fill(PH_LOGINACC, payload["loginacc"])
             dlg_fill(PH_LOGINPW, payload["loginpw"])
+            dlg_fill(PH_CONTACT_NAME, payload["contact_name"])
 
             if auto_confirm:
                 self.write_log("🧾 已填入新增商戶欄位，自動點擊確定")
@@ -389,9 +452,11 @@ class MerchantTool(tk.Tk):
             play = sync_playwright().start()
             browser = play.chromium.launch(headless=False)
             page = browser.new_page()
+            plat = self.var_platform.get()
+            target_url = PLATFORMS[plat]["MERCHANT"]
 
-            self.write_log(f"🌐 開啟商戶後台：{URL_MERCHANT}")
-            page.goto(URL_MERCHANT, wait_until="domcontentloaded")
+            self.write_log(f"🌐 開啟商戶後台：{target_url}")
+            page.goto(target_url, wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
 
             # ===== 商戶後台登入 =====
@@ -478,9 +543,23 @@ class MerchantTool(tk.Tk):
                 page.wait_for_timeout(500)
                 
                 self.write_log("☑ 勾選：商戶積分紀錄")
-                dlg.locator(
-                    '.el-tree-node__content:has(.el-tree-node__label:has-text("商戶積分記錄")) span.el-checkbox__inner'
-                ).first.click()
+            try:
+                # 優先嘗試「商戶積分記錄」 (通常是王牌)
+                selector = '.el-tree-node__content:has(.el-tree-node__label:has-text("商戶積分記錄")) span.el-checkbox__inner'
+                target = dlg.locator(selector).first
+                
+                if target.count() > 0:
+                    target.click()
+                    self.write_log("✅ 已勾選：商戶積分記錄")
+                else:
+                    # 如果找不到，嘗試「用戶積分記錄」 (通常是樂多寶)
+                    selector_alt = '.el-tree-node__content:has(.el-tree-node__label:has-text("用戶積分記錄")) span.el-checkbox__inner'
+                    dlg.locator(selector_alt).first.click()
+                    self.write_log("✅ 已勾選：用戶積分記錄")
+                            
+            except Exception as e:
+                self.write_log(f"⚠️ 無法勾選積分記錄欄位，請檢查頁面結構: {e}")
+            
                 page.wait_for_timeout(500)
                 
                 # 展開機器管理並勾選機器列表

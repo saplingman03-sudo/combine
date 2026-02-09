@@ -18,15 +18,45 @@ class GameApp:
         self.root = root
         self.root.title("遊戲開關 去你媽的小莊手動開關黑奴命")
         self.root.geometry("900x950")
-        self.base_url = "https://wpapi.ldjzmr.top/admin"
+        self.BASE_URLS = {
+            "王牌": "https://wpapi.ldjzmr.top/admin",
+            "樂多寶": "https://ldbapi.ledb.top/admin",
+        }
+
+        # 目前選擇的平台
+        self.platform_var = tk.StringVar(value="王牌")
+        self.base_url = self.BASE_URLS[self.platform_var.get()]
+                # 平台 -> 檔案對照（依平台隔離）
+        self.PLATFORM_FILES = {
+            "王牌": {
+                "cache": "config_cache_wp.json",
+                "aliases": "merchant_aliases_wp.json",
+            },
+            "樂多寶": {
+                "cache": "config_cache_ldb.json",
+                "aliases": "merchant_aliases_ldb.json",
+            }
+        }
+
+        # 動態檔案路徑（會跟平台切換）
+        self.cache_file = None
+        self.alias_file = None
+        self._apply_platform_files()  # 初始化套用檔案路徑
+
+        # 用平台對應的檔案載入資料
+        self.config = self.load_json(self.cache_file, {})
+        self.merchants = self.config.get("merchants", [])
+        self.merchant_aliases = self.load_json(self.alias_file, {})
+
+        # 其他固定檔案（你要不要也分平台都可以，先不動）
+        self.templates = self.load_json(TEMPLATE_FILE, {})
+        self.merchant_templates = self.load_json(MERCHANT_TEMPLATE_FILE, {})
+
 
         # 狀態變數
         self.token = None
         self.game_data_map = {}
-        self.all_games_data = []  # 存放抓回來的原始完整資料
-        self.config = self.load_json(CACHE_FILE, {})
-        self.merchants = self.config.get("merchants", [])  # [{"user": "...", "pw": "..."}]
-        self.templates = self.load_json(TEMPLATE_FILE, {})
+        self.all_games_data = []
 
         # 商戶名稱（別名）與商戶群組模板
         self.merchant_aliases = self.load_json(MERCHANT_ALIAS_FILE, {})
@@ -46,8 +76,64 @@ class GameApp:
 
         self.setup_tab1()
         self.setup_tab2()
+    def _apply_platform_files(self):
+        p = self.platform_var.get()
+        files = self.PLATFORM_FILES.get(p, {})
+        self.cache_file = files.get("cache", "config_cache.json")
+        self.alias_file = files.get("aliases", "merchant_aliases.json")
 
     def setup_tab1(self):
+        # === 平台選擇 ===
+        platform_frame = tk.LabelFrame(self.tab1, text="🛰 平台選擇")
+        platform_frame.pack(fill="x", padx=10, pady=5)
+
+        def on_platform_switch():
+            # 1) 換 base_url
+            self.base_url = self.BASE_URLS[self.platform_var.get()]
+
+            # 2) 換檔案路徑
+            self._apply_platform_files()
+
+            # 3) 重新載入平台專用資料
+            self.config = self.load_json(self.cache_file, {})
+            self.merchants = self.config.get("merchants", [])
+            self.merchant_aliases = self.load_json(self.alias_file, {})
+
+            # 4) 套到 UI（帳密、清單）
+            self.ent_user.delete(0, tk.END)
+            self.ent_user.insert(0, self.config.get("user", ""))
+            self.ent_pw.delete(0, tk.END)
+            self.ent_pw.insert(0, self.config.get("pw", ""))
+
+            self.refresh_merchant_listbox()
+            self.filter_merchants()  # 有搜尋框時更穩
+
+            # 5) 清掉遊戲/Token狀態，避免混用
+            self.token = None
+            self.all_games_data = []
+            self.game_data_map = {}
+            self.selected_codes = set()
+            self.ent_ids.delete(0, tk.END)
+
+            if hasattr(self, "tree"):
+                self.tree.delete(*self.tree.get_children())
+
+            self.log(f"🔁 已切換平台：{self.platform_var.get()} | URL={self.base_url}")
+            self.log(f"📦 cache={self.cache_file} | aliases={self.alias_file}")
+        tk.Radiobutton(
+            platform_frame, text="王牌",
+            variable=self.platform_var, value="王牌",
+            command=on_platform_switch
+        ).pack(side="left", padx=10, pady=2)
+
+        tk.Radiobutton(
+            platform_frame, text="樂多寶",
+            variable=self.platform_var, value="樂多寶",
+            command=on_platform_switch
+        ).pack(side="left", padx=10, pady=2)
+
+
+
         # 2. 商戶登入區
         top_frame = tk.LabelFrame(self.tab1, text="👤 商戶登入")
         top_frame.pack(fill="x", padx=10, pady=5)
@@ -75,6 +161,8 @@ class GameApp:
         self.lst_merchants = tk.Listbox(merchant_frame, selectmode="extended", height=5)
         self.lst_merchants.pack(side="left", fill="x", expand=True, padx=5, pady=5)
         self.lst_merchants.bind("<Double-Button-1>", self.edit_merchant_double_click)
+        self.lst_merchants.bind("<Button-3>", self.show_merchant_context_menu)  # 右鍵
+
 
         btns = tk.Frame(merchant_frame)
         btns.pack(side="left", padx=5)
@@ -196,6 +284,8 @@ class GameApp:
 
         btn_box = tk.Frame(bottom_frame)
         btn_box.pack(pady=5)
+        self.root.after(0, on_platform_switch)
+
 
     def filter_merchants(self, event=None):
         q = (self.ent_merchant_search.get() or "").strip().lower()
@@ -286,11 +376,11 @@ class GameApp:
         return f"{name} ({user})" if (name and user) else (user or name or "")
 
     def save_config(self):
-        """集中儲存 config"""
         self.config["user"] = self.ent_user.get()
         self.config["pw"] = self.ent_pw.get()
         self.config["merchants"] = self.merchants
-        self.save_json(CACHE_FILE, self.config)
+        self.save_json(self.cache_file, self.config)
+
 
     def add_merchant(self):
         """新增商戶到清單"""
@@ -342,7 +432,8 @@ class GameApp:
     def fetch_games(self):
         user, pw = self.ent_user.get(), self.ent_pw.get()
         self.config.update({"user": user, "pw": pw})
-        self.save_json(CACHE_FILE, self.config)
+        self.save_json(self.cache_file, self.config)
+
 
         try:
             # 自動登入拿基準 Token
@@ -794,9 +885,79 @@ class GameApp:
             # 空字串視為清除別名
             self.merchant_aliases.pop(user, None)
 
-        self.save_json(MERCHANT_ALIAS_FILE, self.merchant_aliases)
+        self.save_json(self.alias_file, self.merchant_aliases)
         self.refresh_merchant_listbox()
         self.log(f"🏷 已更新商戶名稱：{user} → {alias or '(清除)'}")
+
+    def show_merchant_context_menu(self, event):
+        """商戶右鍵選單"""
+        # 先選取點擊的項目
+        index = self.lst_merchants.nearest(event.y)
+        self.lst_merchants.selection_clear(0, tk.END)
+        self.lst_merchants.selection_set(index)
+        
+        # 建立選單
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="📋 複製帳號", command=self.copy_merchant_user)
+        menu.add_command(label="🔑 複製密碼", command=self.copy_merchant_pw)
+        menu.add_command(label="📝 複製帳號+密碼", command=self.copy_merchant_both)
+        menu.add_separator()
+        menu.add_command(label="✏️ 編輯", command=self.edit_merchant_double_click)
+        menu.add_command(label="🗑️ 刪除", command=self.remove_merchant)
+        
+        menu.post(event.x_root, event.y_root)
+
+    def copy_merchant_user(self):
+        """複製選取商戶的帳號"""
+        sel = self.lst_merchants.curselection()
+        if not sel:
+            return
+        
+        if hasattr(self, "merchant_view_indexes") and self.merchant_view_indexes:
+            idx = self.merchant_view_indexes[sel[0]]
+        else:
+            idx = sel[0]
+        
+        user = self.merchants[idx].get("user", "")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(user)
+        self.log(f"📋 已複製帳號：{user}")
+
+    def copy_merchant_pw(self):
+        """複製選取商戶的密碼"""
+        sel = self.lst_merchants.curselection()
+        if not sel:
+            return
+        
+        if hasattr(self, "merchant_view_indexes") and self.merchant_view_indexes:
+            idx = self.merchant_view_indexes[sel[0]]
+        else:
+            idx = sel[0]
+        
+        pw = self.merchants[idx].get("pw", "")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(pw)
+        self.log(f"📋 已複製密碼")
+
+    def copy_merchant_both(self):
+        """複製帳號和密碼（格式：帳號\t密碼）"""
+        sel = self.lst_merchants.curselection()
+        if not sel:
+            return
+        
+        if hasattr(self, "merchant_view_indexes") and self.merchant_view_indexes:
+            idx = self.merchant_view_indexes[sel[0]]
+        else:
+            idx = sel[0]
+        
+        m = self.merchants[idx]
+        user = m.get("user", "")
+        pw = m.get("pw", "")
+        
+        text = f"{user}\t{pw}"  # Tab 分隔，可直接貼到 Excel
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.log(f"📋 已複製：{user} (含密碼)")
 
     def run_multi_merchants(self, merchants, status):
         """多商戶核心：用 platform_game.code 做匹配；PUT 用各商戶各自的 platform_game.id"""
