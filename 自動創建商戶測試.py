@@ -1,0 +1,754 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+from tkinter.scrolledtext import ScrolledText
+import threading
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+import json
+import os
+import re
+
+#           dlg.locator('button:has-text("取消")').click()  這個要改確定
+# ===== URLs =====
+PLATFORMS = {
+    "王牌": {
+        "ADMIN": "https://wpadmin.ldjzmr.top",
+        "MERCHANT": "https://wpbrand.ldjzmr.top"
+    },
+    "樂多寶": {
+        "ADMIN": "https://ldbadmin.ledb.top",
+        "MERCHANT": "https://ldbbrand.ledb.top"
+    }
+}
+
+# ===== selectors: admin login =====
+LOGIN_USERNAME_SEL = 'input[name="username"]'
+LOGIN_PASSWORD_SEL = 'input[name="password"]'
+LOGIN_BUTTON_SEL   = 'button:has-text("登錄")'
+LOGGED_IN_MARK_SEL = 'text=退出登录'
+
+# ===== selectors: admin merchant management =====
+MERCHANT_MENU_SEL    = 'li.el-menu-item:has-text("商戶管理")'
+ADD_MERCHANT_BTN_SEL = 'span:has-text("新增商户")'
+
+# ===== 新增商戶表單（彈窗內 placeholder）=====
+PH_NAME      = "請輸入商户名稱"
+PH_SHARE     = "請輸入分成比例"
+PH_SINGLE    = "請輸入單次開分金額"
+PH_MINWASH   = "請輸入最低洗分金額"
+PH_PHONE     = "請輸入聯繫人電話"
+PH_LOGINACC  = "请设置登錄账號"
+PH_LOGINPW   = "请设置登錄密碼"
+PH_CONTACT_NAME = "請輸入聯繫人姓名"
+
+# ===== 商戶後台：系統設置/角色/新增角色 =====
+SYS_MENU_TEXT = "系統設置"
+ROLE_TEXT     = "角色"
+ADD_ROLE_TEXT = "新增角色"
+ROLE_DIALOG_TEXT = "新增角色"
+ADMIN="管理员"
+ADMIN_ADD="添加管理員"
+
+# 權限樹：展開「財務帳單」，勾「上下分交班中心」
+FIN_NODE_TEXT  ="財務賬單"
+SHIFT_NODE_TEXT = "上下分交班中心"
+
+# ===== cache =====
+CACHE_FILE = "merchant_cache.json"
+
+
+def load_cache() -> dict:
+    if not os.path.exists(CACHE_FILE):
+        return {}
+    try:
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_cache(data: dict) -> None:
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+class SiteAApp:
+    def __init__(self, parent):
+        self.parent = parent
+
+        # Site A 的整個畫面容器
+        self.frame = tk.Frame(parent)
+        self.frame.pack(fill="both", expand=True)
+
+        # ⚠️ 把 title/geometry 這種 root 專用的先拿掉
+        # self.root.title(...)
+        # self.root.geometry(...)
+
+        self.setup_ui()
+    def setup_ui(self):
+        # 先留著測試字樣，避免你迷路
+        tk.Label(self.frame, text="Site A｜自動創建商戶").pack(pady=5)
+
+        # ⬇️ 把原本 UI 最外層貼在這裡
+        main_frame = tk.Frame(self.frame)
+        main_frame.pack(fill="both", expand=True)
+
+        # 先不要往下貼
+
+
+        frm = ttk.Frame(main_frame, padding=10)
+        frm.pack(fill="both", expand=True)
+
+        # --- 1. 先定義容器 cred ---
+        cred = ttk.LabelFrame(frm, text="登入資訊（總站）", padding=10)
+        cred.pack(fill="x")
+
+        # --- 2. 平台選擇 (放在第 0 欄) ---
+        plat_frame = ttk.Frame(cred)
+        plat_frame.grid(row=0, column=0, sticky="w")
+        
+        ttk.Label(plat_frame, text="平台:").pack(side="left")
+        self.var_platform = tk.StringVar(value="王牌")
+        
+        for p_name in PLATFORMS.keys():
+            ttk.Radiobutton(
+                plat_frame, text=p_name, variable=self.var_platform, 
+                value=p_name, command=self.on_platform_change
+            ).pack(side="left", padx=5)
+
+        # --- 3. 帳號與密碼 (接著放在後面的欄位，實現並排) ---
+        self.var_user = tk.StringVar(value="")
+        self.var_pass = tk.StringVar(value="")
+
+        ttk.Label(cred, text="帳號:").grid(row=0, column=1, sticky="w", padx=(15, 2))
+        ttk.Entry(cred, textvariable=self.var_user, width=15).grid(row=0, column=2, sticky="w")
+
+        ttk.Label(cred, text="密碼:").grid(row=0, column=3, sticky="w", padx=(10, 2))
+        ttk.Entry(cred, textvariable=self.var_pass, show="*", width=15).grid(row=0, column=4, sticky="w")
+
+        # --- 4. 商戶欄位與其他內容 ---
+        fields = ttk.LabelFrame(frm, text="新增商戶欄位（先跳過：地域/百家）", padding=10)
+        fields.pack(fill="x", pady=(10, 0))
+
+        self.var_name      = tk.StringVar(value="")
+        self.var_share     = tk.StringVar(value="")
+        self.var_single    = tk.StringVar(value="")
+        self.var_minwash   = tk.StringVar(value="")
+        self.var_phone     = tk.StringVar(value="")
+        self.var_loginacc  = tk.StringVar(value="")   # ✅ 商戶登入帳號
+        self.var_loginpw   = tk.StringVar(value="")   # ✅ 商戶登入密碼
+        self.var_contact_name = tk.StringVar(value="")   # 聯繫人姓名（可選）
+
+        # --- 機台機器碼（01~N） ---
+        mc = ttk.LabelFrame(frm, text="機台機器碼（由上往下 01~N）", padding=10)
+        mc.pack(fill="x", pady=(10, 0))
+
+        self.var_machine_count = tk.IntVar(value=1)
+        ttk.Label(mc, text="機台數量").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(mc, from_=1, to=20, textvariable=self.var_machine_count, width=6).grid(row=0, column=1, sticky="w", padx=6)
+
+        self.btn_build_codes = ttk.Button(mc, text="生成 01~N 欄位", command=self.build_machine_code_rows)
+        self.btn_build_codes.grid(row=0, column=2, sticky="w", padx=6)
+
+        # 放動態欄位的容器
+        self.machine_codes_frame = ttk.Frame(mc)
+        self.machine_codes_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+
+        self.machine_code_vars = []  # 存每一台的 StringVar
+        self.build_machine_code_rows()  # 啟動先生成一次
+
+        # ===== 新增：自動確定選項 =====
+        auto_confirm_frame = ttk.LabelFrame(frm, text="自動化設定", padding=10)
+        auto_confirm_frame.pack(fill="x", pady=(10, 0))
+        
+        # 第一行：自動確定選項
+        confirm_row = ttk.Frame(auto_confirm_frame)
+        confirm_row.pack(fill="x", pady=(0, 8))
+        
+        self.var_auto_confirm = tk.BooleanVar(value=True)  # 預設勾選（自動確定）
+        ttk.Checkbutton(
+            confirm_row, 
+            text="✓ 填表後自動點擊「確定」按鈕（取消勾選則需手動確認）", 
+            variable=self.var_auto_confirm
+        ).pack(side="left", padx=5)
+        
+        # 第二行：權限勾選模式
+        perm_row = ttk.Frame(auto_confirm_frame)
+        perm_row.pack(fill="x")
+        
+        ttk.Label(perm_row, text="子商戶權限設定：").pack(side="left", padx=(5, 10))
+        
+        self.var_permission_mode = tk.StringVar(value="basic")  # 預設基本模式
+        
+        ttk.Radiobutton(
+            perm_row,
+            text="基本（僅上下分交班中心）",
+            variable=self.var_permission_mode,
+            value="basic"
+        ).pack(side="left", padx=5)
+        
+        ttk.Radiobutton(
+            perm_row,
+            text="完整（上下分交班中心 + 商戶積分紀錄 + 機器列表）",
+            variable=self.var_permission_mode,
+            value="full"
+        ).pack(side="left", padx=5)
+
+        row = 0
+        ttk.Label(fields, text="商户名稱").grid(row=row, column=0, sticky="w")
+        ttk.Entry(fields, textvariable=self.var_name, width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+
+        ttk.Label(fields, text="分成比例(%)").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Entry(fields, textvariable=self.var_share, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
+        row += 1
+
+        ttk.Label(fields, text="單次開分金額").grid(row=row, column=0, sticky="w")
+        ttk.Entry(fields, textvariable=self.var_single, width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+
+        ttk.Label(fields, text="最低洗分金額").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Entry(fields, textvariable=self.var_minwash, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
+        row += 1
+
+        ttk.Label(fields, text="聯繫人電話").grid(row=row, column=0, sticky="w")
+        ttk.Entry(fields, textvariable=self.var_phone, width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+
+        ttk.Label(fields, text="登錄账號（商戶）").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Entry(fields, textvariable=self.var_loginacc, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
+        row += 1
+
+        ttk.Label(fields, text="登錄密碼（商戶）").grid(row=row, column=0, sticky="w")
+        ttk.Entry(fields, textvariable=self.var_loginpw, show="*", width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+
+        ttk.Label(fields, text="聯繫人姓名（可選）").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Entry(fields, textvariable=self.var_contact_name, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
+        
+
+        # --- 控制按鈕 ---
+        ctrl = ttk.Frame(frm)
+        ctrl.pack(fill="x", pady=(10, 0))
+
+        self.btn_start = ttk.Button(ctrl, text="開始（總站：登入→商戶管理→新增→填表）", command=self.on_start)
+        self.btn_start.pack(side="left")
+
+        self.btn_open_merchant = ttk.Button(ctrl, text="開商戶站（建立角色）", command=self.on_open_merchant_site)
+        self.btn_open_merchant.pack(side="left", padx=8)
+
+        self.btn_clear = ttk.Button(ctrl, text="清空Log", command=lambda: self.log.delete("1.0", "end"))
+        self.btn_clear.pack(side="left", padx=8)
+
+        # --- Log ---
+        logbox = ttk.LabelFrame(frm, text="Log", padding=10)
+        logbox.pack(fill="both", expand=True, pady=(10, 0))
+        self.log = ScrolledText(logbox, height=14)
+        self.log.pack(fill="both", expand=True)
+
+    def write_log(self, msg: str):
+        self.log.insert("end", msg + "\n")
+        self.log.see("end")
+
+    # ===== cache: UI <-> JSON =====
+    def on_platform_change(self):
+            """當切換平台時，強制從快取載入該平台的專屬帳密"""
+            data = load_cache()  # 讀取 JSON
+            plat = self.var_platform.get()
+            
+            # 取得該平台的數據 (例如 data["樂多寶"])
+            plat_data = data.get(plat, {})
+            
+            # 更新 UI 變數
+            self.var_user.set(plat_data.get("username", ""))
+            self.var_pass.set(plat_data.get("password", ""))
+            
+            self.write_log(f"🔄 已切換至 {plat}，載入帳號: {self.var_user.get()}")
+
+    def collect_ui_data(self) -> dict:
+        # 讀取現有全部緩存
+        full_cache = load_cache()
+        plat = self.var_platform.get()
+        
+        # 更新當前平台的特定帳密
+        full_cache[plat] = {
+            "username": self.var_user.get().strip(),
+            "password": self.var_pass.get().strip(),
+        }
+        
+        # 其他通用欄位（商戶名、比例等）維持原樣或放在最外層
+        full_cache.update({
+            "name": self.var_name.get().strip(),
+            "share": self.var_share.get().strip(),
+            "single": self.var_single.get().strip(),
+            "minwash": self.var_minwash.get().strip(),
+            "phone": self.var_phone.get().strip(),
+            "loginacc": self.var_loginacc.get().strip(),
+            "loginpw": self.var_loginpw.get().strip(),
+            "contact_name": self.var_contact_name.get().strip(),
+            "auto_confirm": self.var_auto_confirm.get(),
+            "permission_mode": self.var_permission_mode.get(),
+            "last_platform": plat  # 紀錄上次選哪個
+        })
+        return full_cache
+
+    def load_cache_to_ui(self):
+        data = load_cache()
+        self.var_user.set(data.get("username", ""))
+        self.var_pass.set(data.get("password", ""))
+        self.var_name.set(data.get("name", ""))
+        self.var_share.set(data.get("share", ""))
+        self.var_single.set(data.get("single", ""))
+        self.var_minwash.set(data.get("minwash", ""))
+        self.var_phone.set(data.get("phone", ""))
+        self.var_loginacc.set(data.get("loginacc", ""))
+        self.var_loginpw.set(data.get("loginpw", ""))
+        self.var_contact_name.set(data.get("contact_name", ""))
+        self.var_auto_confirm.set(data.get("auto_confirm", True))  # 預設 True
+        self.var_permission_mode.set(data.get("permission_mode", "basic"))  # 預設基本模式
+        self.write_log("📂 已載入 merchant_cache.json" if data else "📂 尚無緩存檔（第一次使用）")
+
+    def save_ui_to_cache(self):
+        save_cache(self.collect_ui_data())
+        self.write_log("💾 已寫入 merchant_cache.json")
+
+    def on_close(self):
+        try:
+            self.save_ui_to_cache()
+        finally:
+            self.destroy()
+
+    # ===== btn 1: admin flow =====
+    def on_start(self):
+        self.btn_start.config(state="disabled")
+        self.save_ui_to_cache()
+        threading.Thread(target=self.run_automation, daemon=True).start()
+
+    def build_machine_code_rows(self):
+        # 清空舊的
+        for w in self.machine_codes_frame.winfo_children():
+            w.destroy()
+        self.machine_code_vars.clear()
+
+        n = int(self.var_machine_count.get() or 1)
+        for i in range(1, n + 1):
+            v = tk.StringVar(value="")
+            self.machine_code_vars.append(v)
+
+            ttk.Label(self.machine_codes_frame, text=f"{i:02d}號台 機器碼").grid(row=i-1, column=0, sticky="w")
+            ttk.Entry(self.machine_codes_frame, textvariable=v, width=48).grid(row=i-1, column=1, sticky="w", padx=6, pady=2)
+    def strip_tail_digits(self, s: str) -> str:
+        return re.sub(r"\d+$", "", (s or "").strip())
+
+    def acc_with_seq(self, base: str, i: int) -> str:
+        return f"{base}{i:02d}"
+
+
+    def get_machine_codes(self):
+        # 回傳 list，index 0 對應 01號台
+        return [v.get().strip() for v in self.machine_code_vars]
+
+
+    def run_automation(self):
+        try:
+            plat = self.var_platform.get()
+            data = self.collect_ui_data()
+            plat_info = data.get(plat, {})
+            user = plat_info.get("username", "")
+            pw = plat_info.get("password", "")
+            auto_confirm = data.get("auto_confirm", True)
+            
+            if not user or not pw:
+                raise RuntimeError("總站帳號/密碼未填")
+
+            payload = {
+                "name": data["name"],
+                "share": data["share"],
+                "single": data["single"],
+                "minwash": data["minwash"],
+                "phone": data["phone"],
+                "loginacc": data["loginacc"],
+                "loginpw": data["loginpw"],
+                "contact_name": data["contact_name"]
+            }
+            plat = self.var_platform.get()
+            target_url = PLATFORMS[plat]["ADMIN"]  # 動態獲取網址
+
+            self.write_log("🚀 啟動 Playwright（總站）")
+            play = sync_playwright().start()
+            browser = play.chromium.launch(headless=False)
+            page = browser.new_page()
+
+            self.write_log(f"🌐 開啟{plat}總站：{target_url}")
+            page.goto(target_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
+
+            # login
+            if page.locator(LOGIN_USERNAME_SEL).count() > 0:
+                self.write_log("🔐 登入總站")
+                page.fill(LOGIN_USERNAME_SEL, user)
+                page.fill(LOGIN_PASSWORD_SEL, pw)
+                page.click(LOGIN_BUTTON_SEL)
+                page.wait_for_timeout(3000)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_timeout(1500)
+            else:
+                self.write_log("✅ 可能已登入（總站）")
+
+            # merchant menu
+            self.write_log("➡️ 點：商戶管理")
+            page.click(MERCHANT_MENU_SEL)
+            page.wait_for_selector("div.el-table", timeout=10000)
+
+            # add merchant
+            self.write_log("➡️ 點：新增商户")
+            page.click(ADD_MERCHANT_BTN_SEL)
+            page.wait_for_selector('text=新增商户', timeout=10000)
+
+            dlg = page.locator('.el-dialog:has-text("新增商户")').first
+
+            def dlg_fill(ph: str, value: str):
+                dlg.locator(f'input[placeholder="{ph}"]').first.fill(value)
+
+            dlg_fill(PH_NAME, payload["name"])
+            dlg_fill(PH_SHARE, payload["share"])
+            dlg_fill(PH_SINGLE, payload["single"])
+            dlg_fill(PH_MINWASH, payload["minwash"])
+            dlg_fill(PH_PHONE, payload["phone"])
+            dlg_fill(PH_LOGINACC, payload["loginacc"])
+            dlg_fill(PH_LOGINPW, payload["loginpw"])
+            dlg_fill(PH_CONTACT_NAME, payload["contact_name"])
+
+            if auto_confirm:
+                self.write_log("🧾 已填入新增商戶欄位，自動點擊確定")
+                dlg.locator('button:has-text("確定")').click()
+                page.wait_for_timeout(1500)
+                self.write_log("✅ 已完成新增商戶")
+            else:
+                self.write_log("🟡 已填入新增商戶欄位（停在畫面，給你手動按確定）")
+
+        except Exception as e:
+            self.write_log(f"❌ 發生錯誤：{e}")
+            messagebox.showerror("錯誤", str(e))
+        finally:
+            self.btn_start.config(state="normal")
+
+    # ===== btn 2: merchant backend role flow =====
+    def on_open_merchant_site(self):
+        self.btn_open_merchant.config(state="disabled")
+        self.save_ui_to_cache()
+        threading.Thread(target=self.run_open_merchant_site, daemon=True).start()
+    def to_zh_num(self, n: int) -> str:
+        # 1~99：一、二、三... 十、十一、十二... 二十、二十一...
+        digits = ["零","一","二","三","四","五","六","七","八","九"]
+        if n <= 0 or n >= 100:
+            raise ValueError("目前只支援 1~99")
+
+        if n < 10:
+            return digits[n]
+        if n == 10:
+            return "十"
+        if n < 20:
+            return "十" + digits[n % 10]  # 11~19
+        tens = n // 10
+        ones = n % 10
+        if ones == 0:
+            return digits[tens] + "十"     # 20,30...
+        return digits[tens] + "十" + digits[ones]  # 21~99
+
+
+    def run_open_merchant_site(self):
+        try:
+            data = self.collect_ui_data()
+            auto_confirm = data.get("auto_confirm", True)
+            
+            self.write_log("🚀 啟動 Playwright（商戶後台：建角色）")
+            play = sync_playwright().start()
+            browser = play.chromium.launch(headless=False)
+            page = browser.new_page()
+            plat = self.var_platform.get()
+            target_url = PLATFORMS[plat]["MERCHANT"]
+
+            self.write_log(f"🌐 開啟商戶後台：{target_url}")
+            page.goto(target_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
+
+            # ===== 商戶後台登入 =====
+            m_user = data["loginacc"]
+            m_pw   = data["loginpw"]
+
+            if not m_user or not m_pw:
+                raise RuntimeError("商戶登入帳號/密碼未填")
+
+            # selectors（商戶站常見寫法，多 selector 容錯）
+            M_LOGIN_USER_SEL = 'input[name="username"], input[name="account"], input[placeholder*="账号"], input[placeholder*="帳號"]'
+            M_LOGIN_PW_SEL   = 'input[name="password"], input[placeholder*="密码"], input[placeholder*="密碼"]'
+            M_LOGIN_BTN_SEL  = 'button:has-text("登錄"), button:has-text("登录"), button:has-text("登入")'
+            M_LOGGED_SEL     = 'text=退出, text=登出, text=退出登录, text=退出登錄'
+
+            if page.locator(M_LOGIN_USER_SEL).count() > 0:
+                self.write_log("🔐 偵測到商戶登入頁，填入商戶帳密")
+
+                page.locator(M_LOGIN_USER_SEL).first.fill(m_user)
+                page.locator(M_LOGIN_PW_SEL).first.fill(m_pw)
+                page.locator(M_LOGIN_BTN_SEL).first.click()
+
+                page.wait_for_timeout(2500)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_timeout(1500)
+
+                if page.locator(M_LOGGED_SEL).count() > 0:
+                    self.write_log("✅ 商戶後台登入成功")
+                else:
+                    self.write_log("🟡 未偵測到登出標記，可能版面不同或還在載入")
+            else:
+                self.write_log("🟡 未偵測到商戶登入頁（可能已登入）")
+
+            self.write_log("➡️ 系統設置")
+            page.click(f'span:has-text("{SYS_MENU_TEXT}")')
+            page.wait_for_timeout(800)
+
+            self.write_log("➡️ 角色")
+            page.click(f'li.el-menu-item span:has-text("{ROLE_TEXT}")')
+            page.wait_for_timeout(1000)
+
+            self.write_log("➡️ 新增角色")
+            page.click(f'span:has-text("{ADD_ROLE_TEXT}")')
+            page.wait_for_timeout(1000)
+
+            dlg = page.locator(f'.el-dialog:has-text("{ROLE_DIALOG_TEXT}")').first
+
+            self.write_log("✏️ 輸入角色名稱：子商戶")
+            dlg.locator('input[placeholder="角色名稱"]').first.fill("子商戶")
+            page.wait_for_timeout(300)
+
+            self.write_log("▶ 展開：財務賬單")
+            dlg.locator(
+                '.el-tree-node__content:has(.el-tree-node__label:has-text("財務賬單")) .el-tree-node__expand-icon'
+            ).first.click()
+            page.wait_for_timeout(500)
+
+            # 等「上下分交班中心」真的出現
+            page.wait_for_selector(
+                '.el-dialog:has-text("新增角色") .el-tree-node__label:has-text("上下分交班中心")',
+                timeout=8000
+            )
+
+            # 根據權限模式勾選不同項目
+            permission_mode = data.get("permission_mode", "basic")
+            
+            if permission_mode == "basic":
+                # 基本模式：只勾選上下分交班中心
+                self.write_log("☑ 模式：基本（僅上下分交班中心）")
+                self.write_log("☑ 勾選：上下分交班中心")
+                dlg.locator(
+                    '.el-tree-node__content:has(.el-tree-node__label:has-text("上下分交班中心")) span.el-checkbox__inner'
+                ).first.click()
+                page.wait_for_timeout(500)
+                
+            elif permission_mode == "full":
+                # 完整模式：勾選上下分交班中心 + 商戶積分紀錄 + 機器列表
+                self.write_log("☑ 模式：完整（上下分交班中心 + 商戶積分紀錄 + 機器列表）")
+                
+                self.write_log("☑ 勾選：上下分交班中心")
+                dlg.locator(
+                    '.el-tree-node__content:has(.el-tree-node__label:has-text("上下分交班中心")) span.el-checkbox__inner'
+                ).first.click()
+                page.wait_for_timeout(500)
+                
+                self.write_log("☑ 勾選：商戶積分紀錄")
+            try:
+                # 優先嘗試「商戶積分記錄」 (通常是王牌)
+                selector = '.el-tree-node__content:has(.el-tree-node__label:has-text("商戶積分記錄")) span.el-checkbox__inner'
+                target = dlg.locator(selector).first
+                
+                if target.count() > 0:
+                    target.click()
+                    self.write_log("✅ 已勾選：商戶積分記錄")
+                else:
+                    # 如果找不到，嘗試「用戶積分記錄」 (通常是樂多寶)
+                    selector_alt = '.el-tree-node__content:has(.el-tree-node__label:has-text("用戶積分記錄")) span.el-checkbox__inner'
+                    dlg.locator(selector_alt).first.click()
+                    self.write_log("✅ 已勾選：用戶積分記錄")
+                            
+            except Exception as e:
+                self.write_log(f"⚠️ 無法勾選積分記錄欄位，請檢查頁面結構: {e}")
+            
+                page.wait_for_timeout(500)
+                
+                # 展開機器管理並勾選機器列表
+                self.write_log("▶ 展開：機器管理")
+                try:
+                    dlg.locator(
+                        '.el-tree-node__content:has(.el-tree-node__label:has-text("機器管理")) .el-tree-node__expand-icon'
+                    ).first.click()
+                    page.wait_for_timeout(500)
+                    
+                    self.write_log("☑ 勾選：机器列表")
+                    dlg.locator(
+                        '.el-tree-node__content:has(.el-tree-node__label:has-text("机器列表")) span.el-checkbox__inner'
+                    ).first.click()
+                    page.wait_for_timeout(500)
+                except Exception as e:
+                    self.write_log(f"⚠️ 勾選機器列表時出錯：{e}")
+            
+            if auto_confirm:
+                self.write_log("✅ 自動點擊確定")
+                dlg.locator('button:has-text("確定")').click()
+                page.wait_for_timeout(1000)
+            else:
+                self.write_log("🟡 已完成（先不按確定，停在畫面）")
+
+            # ===== 編輯「商戶管理員」角色 =====
+            self.write_log("➡️ 開始編輯「商戶管理員」角色")
+            page.wait_for_timeout(800)
+            
+            # 找到「商戶管理員」那一行，點擊「編輯權限」
+            self.write_log("➡️ 點擊「商戶管理員」的編輯權限")
+            try:
+                # 找到包含「商戶管理員」文字的行，然後點擊該行的「編輯權限」按鈕
+                page.locator('tr:has-text("商戶管理員") a:has-text("編輯權限"), tr:has-text("商户管理员") span:has-text("編輯權限")').first.click()
+                page.wait_for_timeout(1000)
+                
+                # 等待編輯角色對話框出現
+                dlg_edit = page.locator('.el-dialog:has-text("編輯角色")').first
+                dlg_edit.wait_for(state="visible", timeout=5000)
+                
+                self.write_log("▶ 對「財務賬單」點擊兩次")
+                # 點擊財務賬單的 checkbox 兩次
+                finance_checkbox = dlg_edit.locator(
+                    '.el-tree-node__content:has(.el-tree-node__label:has-text("財務賬單")) span.el-checkbox__inner'
+                ).first
+                
+                # 第一次點擊
+                finance_checkbox.click()
+                page.wait_for_timeout(300)
+                self.write_log("  ✓ 第一次點擊")
+                
+                # 第二次點擊
+                finance_checkbox.click()
+                page.wait_for_timeout(300)
+                self.write_log("  ✓ 第二次點擊")
+                
+                # 自動點擊確定（不需要手動）
+                self.write_log("✅ 自動點擊確定完成商戶管理員編輯")
+                dlg_edit.locator('button:has-text("確定")').click()
+                page.wait_for_timeout(1000)
+                
+            except Exception as e:
+                self.write_log(f"⚠️ 編輯商戶管理員時出錯：{e}")
+
+            # ===== 機器管理 =====
+            self.write_log("➡️ 機器管理")
+            page.click('span:has-text("機器管理")')
+            page.wait_for_timeout(800)
+            
+            self.write_log("➡️ 机器列表")
+            page.click('span:has-text("机器列表")')
+            page.wait_for_timeout(800)
+            
+            merchant_name = data["name"].strip()
+            m_acc = data["loginacc"].strip()
+            m_pw  = data["loginpw"].strip()
+
+            codes = self.get_machine_codes()
+            n = len(codes)
+
+            base_acc = self.strip_tail_digits(m_acc)  # 去掉尾巴數字
+
+            for i in range(1, n + 1):
+                seq = f"{i:02d}"
+                machine_name = f"{merchant_name}{self.to_zh_num(i)}號台"
+                machine_no   = machine_name
+                machine_acc  = self.acc_with_seq(base_acc, i)
+                machine_pw   = m_pw
+                machine_code = codes[i-1]  # 你在 UI 填的第 i 行
+
+                self.write_log(f"🧾 第{seq}台：開啟新增機器並填表")
+                page.click('span:has-text("新增機器")')
+                page.wait_for_timeout(800)
+
+                dlg2 = page.locator('.el-dialog:has-text("新增機器")').first
+
+                # 填必填
+                dlg2.locator('input[placeholder="請輸入機器名稱"]').first.fill(machine_name)
+                dlg2.locator('input[placeholder="請輸入機器编號"]').first.fill(machine_no)
+                dlg2.locator('input[placeholder="請輸入機器碼"]').first.fill(machine_code)
+
+                # 1) 先點機器碼那格
+                code_ipt = dlg2.locator('input[placeholder="請輸入機器碼"]').first
+                code_ipt.click()
+                code_ipt.press("Control+A")
+                code_ipt.type(str(machine_code), delay=30)
+
+                # 2) Tab 4 次
+                for _ in range(4):
+                    page.keyboard.press("Tab")
+                    page.wait_for_timeout(120)
+
+                # 3) 強制設定帳密
+                def force_set_input(locator, value: str):
+                    locator.wait_for(state="visible", timeout=10000)
+                    locator.scroll_into_view_if_needed()
+                    locator.evaluate(
+                        """(el, v) => {
+                            el.focus();
+                            el.value = v;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.blur();
+                        }""",
+                        str(value),
+                    )
+
+                acc_ipt = dlg2.locator('input[placeholder="請輸入機器登錄賬號"]:visible').last
+                pw_ipt  = dlg2.locator('input[placeholder="請輸入機器登錄密碼"]:visible').last
+
+                force_set_input(acc_ipt, machine_acc)
+                force_set_input(pw_ipt, machine_pw)
+
+                self.write_log(f"🟡 第{seq}台已填好：請你手動按『確認』")
+                    
+            page.wait_for_timeout(800)
+            self.write_log("➡️ 管理员")
+            page.click(f'span:has-text("{ADMIN}")')
+            page.wait_for_timeout(800)
+            self.write_log("➡️ 添加管理員")
+            page.click(f'span:has-text("{ADMIN_ADD}")')
+            page.wait_for_timeout(800)
+
+            dlg_admin = page.locator('.el-dialog:has-text("管理員"), .el-dialog:has-text("添加")').last
+            dlg_admin.wait_for(state="visible", timeout=8000)
+            
+            m_acc_raw = data["loginacc"].strip()
+            m_pw    = data["loginpw"].strip()
+            m_phone = data["phone"].strip()
+            merchant_name = data["name"].strip()  
+            m_acc_stripped = self.strip_tail_digits(m_acc_raw)
+            
+            admin_name_ipt = dlg_admin.locator('input[placeholder="請輸入管理員名稱"]')
+            admin_name_ipt.fill(merchant_name)
+            dlg_admin.locator('input[placeholder="請輸入登录账户"]').fill(m_acc_stripped)
+            dlg_admin.locator('input[placeholder="請輸入登录密码"]').fill(m_pw)
+            dlg_admin.locator('input[placeholder="請輸入联系电话"]').fill(m_phone)
+
+            self.write_log("點擊選擇角色下拉選單")
+            role_select = dlg_admin.locator('input[placeholder="請选择角色類型"]')
+            role_select.click()
+            
+            self.write_log("選擇角色：子商戶")
+            option_sub_merchant = page.locator('li.el-select-dropdown__item:has-text("子商戶")')
+            option_sub_merchant.wait_for(state="visible", timeout=5000)
+            option_sub_merchant.click()
+            
+            if auto_confirm:
+                self.write_log("✅ 自動點擊確定完成管理員新增")
+                dlg_admin.locator('button:has-text("確定")').click()
+                page.wait_for_timeout(1000)
+            else:
+                self.write_log("🟡 已填好管理員資料，請手動按確定")
+
+        except Exception as e:
+            self.write_log(f"❌ 發生錯誤：{e}")
+            messagebox.showerror("錯誤", str(e))
+        finally:
+            self.btn_open_merchant.config(state="normal")
+
+
+if __name__ == "__main__":
+    print("這支檔案已改成可嵌入版，請用主程式 Notebook 呼叫")
