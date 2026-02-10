@@ -252,6 +252,7 @@ def run_site_A(platform: str, username: str, password: str, target_list: list, h
 
                     return None
                 frame = find_frame_containing(page)
+                
                 if not frame:
                     raise RuntimeError("找不到包含 Code / Handicap 的 iframe")
                 log("✅ 找到 Code/Handicap 的 iframe")
@@ -289,6 +290,28 @@ def run_site_A(platform: str, username: str, password: str, target_list: list, h
                         except Exception as e:
                             # 捕捉錯誤，不讓程式因為某個號碼沒找到就中斷
                             log(f"號碼 {code.ljust(3)}: ❌ 處理失敗 (找不到元素或超時)")
+                log("🖱️ 準備捲動至頁面底部並點擊 Confirm...")
+                
+                # 定義 Confirm 按鈕的定位器 (使用 onclick 屬性最精確)
+                confirm_btn = frame.locator('button[onclick="dosubmit();"]').first
+                
+                try:
+                    # 1. 確保按鈕在 DOM 中存在
+                    confirm_btn.wait_for(state="attached", timeout=10000)
+                    
+                    # 2. 捲動到該按鈕的位置 (Playwright click 通常會自動捲動，但手動更保險)
+                    confirm_btn.scroll_into_view_if_needed()
+                    log("✅ 已捲動到 Confirm 按鈕位置")
+                    
+                    # 3. 點擊按鈕
+                    confirm_btn.click(force=True)
+                    log("🚀 已點擊 CONFRIM 送出設定！")
+                    
+                    # 4. 點擊後通常會有彈窗或跳轉，等待一下確保處理完成
+                    page.wait_for_timeout(2000) 
+                    
+                except Exception as e:
+                    log(f"❌ 點擊 Confirm 失敗: {e}")
 
             except Exception as e:
                 log(f"❌ 帳號 {target_account} 執行中斷: {e}")
@@ -298,7 +321,7 @@ def run_site_A(platform: str, username: str, password: str, target_list: list, h
 
 
 
-        input("⏸ 已暫停（畫面保留中），處理完請按 Enter 繼續或關閉…")
+        page.wait_for_timeout(10_000_000)  # debug用，讓瀏覽器保持開啟
 
 
         browser.close()
@@ -694,8 +717,8 @@ def run_site_E(platform: str, username: str, password: str, target_list: list, h
                         
 
             
-        if not headless:
-            input("⏸ SA 停在頁面，確認後按 Enter 繼續…")
+        
+        page.wait_for_timeout(10_000_000)  # debug用，讓瀏覽器保持開啟
 
 
         browser.close()
