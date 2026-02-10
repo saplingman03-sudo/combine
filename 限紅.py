@@ -52,7 +52,10 @@ def save_config(cfg: dict):
 
 
 
-def run_site_A(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, process_group_a: bool, process_group_b: bool, process_group_c: bool = True):
+def run_site_A(platform: str, username: str, password: str, target_list: list,
+               headless: bool, log_fn,
+               process_group_a: bool, process_group_b: bool, process_group_c: bool = True,
+               do_confirm: bool = True):
     def log(msg: str):
         log_fn(msg)
 
@@ -290,28 +293,30 @@ def run_site_A(platform: str, username: str, password: str, target_list: list, h
                         except Exception as e:
                             # 捕捉錯誤，不讓程式因為某個號碼沒找到就中斷
                             log(f"號碼 {code.ljust(3)}: ❌ 處理失敗 (找不到元素或超時)")
-                log("🖱️ 準備捲動至頁面底部並點擊 Confirm...")
-                
-                # 定義 Confirm 按鈕的定位器 (使用 onclick 屬性最精確)
-                confirm_btn = frame.locator('button[onclick="dosubmit();"]').first
-                
-                try:
-                    # 1. 確保按鈕在 DOM 中存在
-                    confirm_btn.wait_for(state="attached", timeout=10000)
-                    
-                    # 2. 捲動到該按鈕的位置 (Playwright click 通常會自動捲動，但手動更保險)
-                    confirm_btn.scroll_into_view_if_needed()
-                    log("✅ 已捲動到 Confirm 按鈕位置")
-                    
-                    # 3. 點擊按鈕
-                    confirm_btn.click(force=True)
-                    log("🚀 已點擊 CONFRIM 送出設定！")
-                    
-                    # 4. 點擊後通常會有彈窗或跳轉，等待一下確保處理完成
-                    page.wait_for_timeout(2000) 
-                    
-                except Exception as e:
-                    log(f"❌ 點擊 Confirm 失敗: {e}")
+
+                if do_confirm:
+                    log("🖱️ 準備捲動至頁面底部並點擊 Confirm...")
+                    page.wait_for_timeout(300)
+
+                    confirm_btn = frame.locator('button[onclick="dosubmit();"]').first
+
+                    try:
+                        confirm_btn.wait_for(state="attached", timeout=10000)
+                        confirm_btn.scroll_into_view_if_needed()
+                        log("✅ 已捲動到 Confirm 按鈕位置")
+
+                        confirm_btn.click(force=True)
+                        log("🚀 已點擊 CONFIRM 送出設定！")
+
+                        page.wait_for_timeout(2000)
+                    except Exception as e:
+                        log(f"❌ 點擊 Confirm 失敗: {e}")
+                else:
+                    log("⏭️ 已設定為『不送出 Confirm』：跳過 Confirm 點擊（只做勾選不提交）")
+                page.wait_for_timeout(5000)
+
+
+
 
             except Exception as e:
                 log(f"❌ 帳號 {target_account} 執行中斷: {e}")
@@ -840,7 +845,13 @@ class SiteCApp(ttk.Frame):
             ttk.Checkbutton(rowbox, text="群組 10K", variable=var_a).pack(side="left", padx=10)
             ttk.Checkbutton(rowbox, text="群組 20K", variable=var_b).pack(side="left")
 
-            wm_vars = (var_a, var_b, var_c)
+            # ✅ 新增：Confirm 開關
+            var_do_confirm = tk.BooleanVar(value=True)
+            row_confirm = ttk.Frame(parent)
+            row_confirm.grid(row=4, column=1, sticky="w", pady=(6, 0))
+            ttk.Checkbutton(row_confirm, text="點 Confirm 送出設定", variable=var_do_confirm).pack(side="left")
+
+            wm_vars = (var_a, var_b, var_c, var_do_confirm)
 
         # 把變數存起來，on_run 讀得到
         self.tabs[site].vars = {
@@ -928,18 +939,22 @@ class SiteCApp(ttk.Frame):
         def worker():
             try:
                 if site == "WM":
-                    var_a, var_b, var_c = v["wm_groups"]
+                    var_a, var_b, var_c, var_do_confirm = v["wm_groups"]
                     process_a = var_a.get()
                     process_b = var_b.get()
                     process_c = var_c.get()
+                    do_confirm = var_do_confirm.get()
+
                     if not (process_a or process_b or process_c):
                         raise RuntimeError("WM：請至少勾選一個群組")
 
                     platform = self.platform_var.get()
                     run_site_A(
                         platform, username, password, targets, headless, self.log,
-                        process_a, process_b, process_c
+                        process_a, process_b, process_c,
+                        do_confirm=do_confirm
                     )
+
                 elif site == "歐博":
                     platform = self.platform_var.get()
                     run_site_B(platform, username, password, targets, headless, self.log)
