@@ -1,14 +1,34 @@
 {
-  "WM": {
-    "username": "ldbntdapi",
-    "password": "ldbntdapi"
+  "wp": {
+    "WM": {
+      "username": "acentd",
+      "password": "acentd"
+    },
+    "SiteB": {
+      "username": "acentd",
+      "password": "acentd"
+    },
+    "SA": {
+      "username": "testwp",
+      "password": "Aa168168"
+    },
+    "SiteD": {
+      "username": "",
+      "password": ""
+    },
+    "SiteC": {
+      "username": "",
+      "password": ""
+    }
   },
-  "SiteB": {
-    "username": "acentd",
-    "password": "acentd"
-  },
-  "SA": {
-    "username": "leduobao",
-    "password": "aj3bu4ck"
+  "ldb": {
+    "WM": {
+      "username": "ldbntdapi",
+      "password": "ldbntdapi"
+    },
+    "SA": {
+      "username": "leduobao",
+      "password": "aj3bu4ck"
+    }
   }
 }

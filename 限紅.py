@@ -1,5 +1,6 @@
 ﻿from logging import log
 import os
+import platform
 import re
 import threading
 import traceback
@@ -16,19 +17,31 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 CONFIG_PATH = Path("config_cache_siteC.json")  # ✅ 改成獨立的 config
 
 def load_config() -> dict:
-    if CONFIG_PATH.exists():
-        try:
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except:
-            return {}
-    return {}
+    if not CONFIG_PATH.exists():
+        return {}
+
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except:
+        return {}
+
+    # ✅ 舊版扁平格式：{"SA": {...}, "WM": {...}}
+    # ✅ 新版格式：{"wp": {"SA": {...}}, "ldb": {"SA": {...}}}
+    if cfg and ("wp" not in cfg and "ldb" not in cfg):
+        cfg = {"wp": cfg, "ldb": {}}   # 舊資料先當作 wp
+        save_config(cfg)
+
+    # 保險：確保兩個 key 都存在
+    cfg.setdefault("wp", {})
+    cfg.setdefault("ldb", {})
+    return cfg
 
 def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 
-def run_to_userlist_and_fill_WM(username: str, password: str, target_list: list, headless: bool, log_fn, process_group_a: bool, process_group_b: bool, process_group_c: bool = True):
+def run_to_userlist_and_fill_WM(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, process_group_a: bool, process_group_b: bool, process_group_c: bool = True):
     def log(msg: str):
         log_fn(msg)
 
@@ -36,6 +49,7 @@ def run_to_userlist_and_fill_WM(username: str, password: str, target_list: list,
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context()
         page = context.new_page()
+
 
         # 1) 打開登入頁
         log("🔐 打開登入頁…")
@@ -265,8 +279,6 @@ def run_to_userlist_and_fill_WM(username: str, password: str, target_list: list,
                             # 捕捉錯誤，不讓程式因為某個號碼沒找到就中斷
                             log(f"號碼 {code.ljust(3)}: ❌ 處理失敗 (找不到元素或超時)")
 
-                        except Exception as e:
-                            log(f"❌ 號碼 {code} 處理失敗: {str(e)}")
             except Exception as e:
                 log(f"❌ 帳號 {target_account} 執行中斷: {e}")
                 # 發生錯誤時，嘗試回到 User List 頁面嘗試下一個，不讓整個程式當掉
@@ -279,7 +291,7 @@ def run_to_userlist_and_fill_WM(username: str, password: str, target_list: list,
 
 
         browser.close()
-def run_site_E(username: str, password: str, target_list: list, headless: bool, log_fn, normal_max: str, deluxe_max: str):
+def run_site_E(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, normal_max: str, deluxe_max: str):
 
     def log(msg: str):
         log_fn(msg)
@@ -451,9 +463,19 @@ def run_site_E(username: str, password: str, target_list: list, headless: bool, 
                     check_set   = {("200", deluxe_max)}                  # 再勾你選的
                     log(f"🎯 特殊處理：{game_name} → 勾 200-{deluxe_max}")
                 else:
-                    uncheck_set = {("100", m) for m in NORMAL_CHOICES}
-                    check_set   = {("100", normal_max)}
-                    log(f"🧩 一般處理：{game_name} → 勾 100-{normal_max}")
+                    # ✅ Ultra Roulette + 5000 → 改用 50-5000
+                    if game_name == "Ultra Roulette" and normal_max == "5000":
+                        base_min = "50"
+                        log("🧠 Ultra Roulette 偵測到 Max=5000，改用 Min=50（因為沒有 100-5000）")
+                    else:
+                        base_min = "100"
+
+                    target_max = normal_max
+                    choices = NORMAL_CHOICES
+
+                uncheck_set = {(base_min, m) for m in choices}      # 清同 min 的候選
+                check_set   = {(base_min, target_max)}              # 勾你選的那個
+                log(f"🎯 {game_name} → 目標勾選 {base_min}-{target_max}")
 
              
                 try:
@@ -550,6 +572,24 @@ class SiteCApp(ttk.Frame):
         self.pack(fill="both", expand=True)
 
         self.cfg = load_config()
+        # ===== Platform =====
+        self.platform_var = tk.StringVar(value="wp")  # wp=王牌, ldb=樂多寶
+
+        platform_frame = ttk.LabelFrame(self, text="平台")
+        platform_frame.pack(fill="x", padx=12, pady=(10, 0))
+
+        ttk.Radiobutton(
+            platform_frame, text="王牌",
+            variable=self.platform_var, value="wp",
+            command=self._on_platform_switch
+        ).pack(side="left", padx=10, pady=4)
+
+        ttk.Radiobutton(
+            platform_frame, text="樂多寶",
+            variable=self.platform_var, value="ldb",
+            command=self._on_platform_switch
+        ).pack(side="left", padx=10, pady=4)
+
 
         # ===== Notebook =====
         self.nb = ttk.Notebook(self)
@@ -569,7 +609,6 @@ class SiteCApp(ttk.Frame):
         btnfrm = ttk.Frame(self, padding=(12, 0, 12, 8))
         btnfrm.pack(fill="x")
 
-        ...
 
 
         self.btn_run = ttk.Button(btnfrm, text="執行目前分頁", command=self.on_run_current_tab)
@@ -587,6 +626,24 @@ class SiteCApp(ttk.Frame):
         self.txt.pack(fill="both", expand=True, padx=12, pady=8)
 
         self.log("🟦 每個分頁是一個站台，每個站台有自己的帳密（會記憶在 config_cache.json）。")
+        self.running = set()  # 正在跑的站台集合
+
+    def _get_platform_cfg(self):
+        p = self.platform_var.get()  # "wp" or "ldb"
+        if p not in self.cfg:
+            self.cfg[p] = {}
+        return p, self.cfg[p]
+
+    def _on_platform_switch(self):
+        p, pcfg = self._get_platform_cfg()
+
+        for site in self.site_names:
+            v = self.tabs[site].vars
+            site_cfg = pcfg.get(site, {})
+            v["user"].set(site_cfg.get("username", ""))
+            v["pass"].set(site_cfg.get("password", ""))
+
+        self.log(f"🔁 已切換平台：{'王牌' if p=='wp' else '樂多寶'}（帳密已載入）")
 
     # -------------------------
     # 每個站台 tab 的 UI
@@ -594,12 +651,13 @@ class SiteCApp(ttk.Frame):
     def _build_site_tab(self, parent, site: str):
         # 站台帳密（各自獨立）
         ttk.Label(parent, text=f"{site} 帳號").grid(row=0, column=0, sticky="w")
-        var_user = tk.StringVar(value=self.cfg.get(site, {}).get("username", ""))
+        p = getattr(self, "platform_var", tk.StringVar(value="wp")).get()
+        var_user = tk.StringVar(value=self.cfg.get(p, {}).get(site, {}).get("username", ""))
         ent_user = ttk.Entry(parent, textvariable=var_user, width=30)
         ent_user.grid(row=0, column=1, padx=8, pady=4, sticky="w")
 
         ttk.Label(parent, text=f"{site} 密碼").grid(row=0, column=2, sticky="w")
-        var_pass = tk.StringVar(value=self.cfg.get(site, {}).get("password", ""))
+        var_pass = tk.StringVar(value=self.cfg.get(p, {}).get(site, {}).get("password", ""))
         ent_pass = ttk.Entry(parent, textvariable=var_pass, show="*", width=30)
         ent_pass.grid(row=0, column=3, padx=8, pady=4, sticky="w")
 
@@ -665,6 +723,7 @@ class SiteCApp(ttk.Frame):
             self.tabs[site].vars["deluxe_max"] = var_deluxe_max
 
 
+
     # -------------------------
     # log
     # -------------------------
@@ -694,11 +753,29 @@ class SiteCApp(ttk.Frame):
         
 
         # 先存帳密（每站各自記憶）
-        self.cfg[site] = {"username": username, "password": password}
+        p, pcfg = self._get_platform_cfg()
+        pcfg[site] = {"username": username, "password": password}
         save_config(self.cfg)
 
-        self.btn_run.config(state="disabled")
-        self.log(f"▶ 開始：站台={site} targets={len(targets)} headless={headless}")
+        site = self.nb.tab(current_tab, "text")
+
+        if site in self.running:
+            messagebox.showinfo("正在執行", f"{site} 已在執行中，避免重複啟動。")
+            return
+
+        # ✅ 不要再 disable 全域按鈕
+        self.running.add(site)
+        self.log(f"▶ 開始：站台={site} ...")
+
+        def worker():
+            try:
+                ...
+            except Exception as e:
+                ...
+            finally:
+                self.running.discard(site)
+                self.log(f"🟩 {site} 執行結束（running={len(self.running)}）")
+
 
         def worker():
             try:
@@ -710,15 +787,19 @@ class SiteCApp(ttk.Frame):
                     if not (process_a or process_b or process_c):
                         raise RuntimeError("WM：請至少勾選一個群組")
 
+                    platform = self.platform_var.get()
                     run_to_userlist_and_fill_WM(
-                        username, password, targets, headless, self.log,
+                        platform, username, password, targets, headless, self.log,
                         process_a, process_b, process_c
                     )
+
                 else:
                     if site == "SA":
                         normal_max = v["normal_max"].get()  # e.g. "10000" / "20000"
                         deluxe_max = v["deluxe_max"].get()  # e.g. "10000" / "20000"
-                        run_site_E(username, password, targets, headless, self.log, normal_max, deluxe_max)
+                        platform = self.platform_var.get()
+                        run_site_E(platform, username, password, targets, headless, self.log, normal_max, deluxe_max)
+
                   
 
                     else:

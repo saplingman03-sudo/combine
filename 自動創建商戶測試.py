@@ -92,7 +92,6 @@ class SiteAApp:
         main_frame = tk.Frame(self.frame)
         main_frame.pack(fill="both", expand=True)
 
-        # 先不要往下貼
 
 
         frm = ttk.Frame(main_frame, padding=10)
@@ -240,6 +239,8 @@ class SiteAApp:
         logbox.pack(fill="both", expand=True, pady=(10, 0))
         self.log = ScrolledText(logbox, height=14)
         self.log.pack(fill="both", expand=True)
+        self.load_cache_to_ui()
+
 
     def write_log(self, msg: str):
         self.log.insert("end", msg + "\n")
