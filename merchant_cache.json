@@ -1,12 +1,12 @@
 {
   "username": "cai888",
   "password": "cai888",
-  "name": "黑桃",
-  "share": "25",
+  "name": "南投大發",
+  "share": "21",
   "single": "100",
   "minwash": "100",
   "phone": "123",
-  "loginacc": "fydzntcjwj888",
+  "loginacc": "fydzntdf888",
   "loginpw": "000000",
   "auto_confirm": true,
   "permission_mode": "full",
@@ -20,5 +20,5 @@
     "username": "admin",
     "password": "leduobao"
   },
-  "contact_name": "111"
+  "contact_name": "富業電子"
 }

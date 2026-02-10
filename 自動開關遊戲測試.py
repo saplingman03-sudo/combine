@@ -75,8 +75,11 @@ class SiteBApp:
         self.tab2 = tk.Frame(self.notebook)
 
         self.notebook.add(self.tab1, text=" ⚙️ 拖曳操作面板 ")
+        self.notebook.add(self.tab2, text=" 🧾 日誌 ")  # ✅ 加入這一行
+
 
         self.setup_tab1()
+        self.setup_tab2()  # 記得實作這個方法來建立日誌面板
     def _apply_platform_files(self):
         p = self.platform_var.get()
         files = self.PLATFORM_FILES.get(p, {})
@@ -133,16 +136,6 @@ class SiteBApp:
             command=on_platform_switch
         ).pack(side="left", padx=10, pady=2)
 
-        log_frame = tk.LabelFrame(self.frame, text="🧾 系統日誌")
-        log_frame.pack(fill="both", expand=True, padx=5, pady=5)
-
-        self.log_area = scrolledtext.ScrolledText(
-            log_frame,
-            width=100,
-            height=10,
-            bg="#f0f0f0"
-        )
-        self.log_area.pack(fill="both", expand=True, padx=5, pady=5)
 
 
 
@@ -1129,7 +1122,18 @@ class SiteBApp:
     def _set_summary_text(self, text):
         self.txt_summary.delete("1.0", tk.END)
         self.txt_summary.insert(tk.END, text)
+    def setup_tab2(self):
+        """設定日誌分頁"""
+        log_frame = tk.LabelFrame(self.tab2, text="🧾 系統日誌")
+        log_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+        self.log_area = scrolledtext.ScrolledText(
+            log_frame,
+            width=100,
+            height=30,
+            bg="#f0f0f0"
+        )
+        self.log_area.pack(fill="both", expand=True, padx=5, pady=5)
 if __name__ == "__main__":
     root = tk.Tk()
     app = SiteBApp(root)  # 改這裡
