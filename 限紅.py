@@ -516,7 +516,10 @@ def run_site_E(platform: str, username: str, password: str, target_list: list, h
             username_input.press("Backspace")
 
             # 3️⃣ 輸入 target account
-            username_input.fill(f"{target_account}@a14251")
+            if platform =="wp":
+                username_input.fill(f"{target_account}@a13154")
+            else:
+                username_input.fill(f"{target_account}@a14251")
 
             # 4️⃣ 點 Search
             search_btn = page.locator('button:has-text("Search")').first
