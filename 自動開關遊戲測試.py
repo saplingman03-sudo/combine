@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk, simpledialog
 import requests
 import json
