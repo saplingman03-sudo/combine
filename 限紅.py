@@ -605,9 +605,9 @@ def run_site_E(platform: str, username: str, password: str, target_list: list, h
                     target_max = normal_max
                     choices = NORMAL_CHOICES
 
-                uncheck_set = {(base_min, m) for m in choices}      # 清同 min 的候選
-                check_set   = {(base_min, target_max)}              # 勾你選的那個
-                log(f"🎯 {game_name} → 目標勾選 {base_min}-{target_max}")
+                    uncheck_set = {(base_min, m) for m in choices}      # 清同 min 的候選
+                    check_set   = {(base_min, target_max)}              # 勾你選的那個
+                    log(f"🎯 {game_name} → 目標勾選 {base_min}-{target_max}")
 
              
                 try:
