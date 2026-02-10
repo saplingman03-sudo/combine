@@ -11,10 +11,21 @@ import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
+        # # ✅ 如果 UI 沒填 targets，就用預設測試 target（之後不想要直接註解掉這段）
+        # if not target_list:
+        #     target_list = [DEBUG_DEFAULT_TARGET]   # ← 不想自動塞就註解這行
+        #     log(f"🧪 SiteB 使用預設測試 target：{target_list[0]}")
+
+        # # ===== DEBUG 測試用預設 target（不想用就註解掉這行）=====
+        # DEBUG_DEFAULT_TARGET = "ab1ecca08d3a7f15wrb"
+
+
 #        input("⏸ 已暫停（畫面保留中），處理完請按 Enter 繼續或關閉…") debug時需要
 
 
 CONFIG_PATH = Path("config_cache_siteC.json")  # ✅ 改成獨立的 config
+# ===== DEBUG 測試用預設 target（不想用就註解掉這行）=====
+DEBUG_DEFAULT_TARGET = "ab1ecca08d3a7f15wrb"
 
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
@@ -41,7 +52,7 @@ def save_config(cfg: dict):
 
 
 
-def run_to_userlist_and_fill_WM(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, process_group_a: bool, process_group_b: bool, process_group_c: bool = True):
+def run_site_A(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, process_group_a: bool, process_group_b: bool, process_group_c: bool = True):
     def log(msg: str):
         log_fn(msg)
 
@@ -291,6 +302,127 @@ def run_to_userlist_and_fill_WM(platform: str, username: str, password: str, tar
 
 
         browser.close()
+def run_site_B(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn):
+    def log(msg: str):
+        log_fn(msg)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
+
+        log("🔐 SiteB")
+        page.goto("https://ams.allbetgaming.net ", wait_until="domcontentloaded")
+        page.wait_for_timeout(2000)
+
+        log("🌐 SiteB English...")
+
+        # 1) 點「简体中文」下拉（用 id 最穩）
+        label = page.locator('div.current-language-label').first
+        label.wait_for(state="visible", timeout=10000)
+
+        clickable = label.locator(
+            "xpath=ancestor::a[1] | ancestor::button[1] | ancestor::div[1]"
+        )
+        clickable.click(force=True)
+
+        # 2) 點 English 尚未完成
+        page.locator(
+            ".language-item:has-text('English')"
+        ).first.click(force=True)
+
+        page.wait_for_timeout(600)
+        log("✅ SiteB：語言已切換為 English")
+
+        inputs = page.locator("input.el-input__inner")
+
+        user_input = inputs.nth(0)
+        pass_input = inputs.nth(1)
+
+        user_input.click()
+        user_input.fill(username)
+
+        pass_input.click()
+        pass_input.fill(password)
+
+        # 點 Login
+        login_span = page.locator("span:has-text('Login')").first
+        login_span.click(force=True)
+
+        # 或 Enter 補刀
+        pass_input.press("Enter")
+
+        # 等登入成功
+        page.wait_for_timeout(2000)
+
+
+        page.get_by_role("button", name="Players").click()
+
+        # ✅ 如果 UI 沒填 targets，就用預設測試 target（之後不想要直接註解掉這段）
+        if not target_list:
+            target_list = [DEBUG_DEFAULT_TARGET]   # ← 不想自動塞就註解這行
+            log(f"🧪 SiteB 使用預設測試 target：{target_list[0]}")
+
+        #開始迴圈
+        for target_account in target_list:
+            log(f"🔎 SiteB 搜尋：{target_account}")
+            inputs = page.locator("input.el-input")
+            target_input = inputs.first  # 如果不是第一個，改 nth(1)
+
+            target_input.wait_for(state="visible", timeout=10000)
+
+            target_input.click()
+            target_input.press("Control+A")
+            target_input.press("Backspace")
+            target_input.type(target_account, delay=50)
+            
+            search_icon = page.locator("svg:has(title:has-text('search'))").first
+            search_icon.wait_for(state="visible", timeout=10000)
+            search_icon.click(force=True)
+            log("✅ SiteB：已送出搜尋")
+            page.wait_for_timeout(2000)
+
+            #找到edit按鈕
+            label = page.get_by_text("Handicap(Bet Limit)").first
+            label.wait_for(state="visible", timeout=10000)
+
+            btn = label.locator("xpath=following::button[.//span[normalize-space()='Edit']][1]").first
+            btn.scroll_into_view_if_needed()
+            btn.click(force=True)
+
+            
+
+
+            # 鎖彈窗（用標題，不猜 class）
+            modal = page.get_by_text("Edit Handicap(Bet Limit)", exact=False)\
+                        .locator("xpath=ancestor::div[3]").first
+            modal.wait_for(state="visible", timeout=10000)
+
+            # 找到「已勾選」的 input 容器
+            checked_input = modal.locator("span.is-checked.el-checkbox__input").first
+            checked_input.wait_for(state="visible", timeout=10000)
+
+            # 點裡面的框框（真正可點）
+            box = checked_input.locator("span.el-checkbox__inner").first
+            box.scroll_into_view_if_needed()
+            box.click(force=True)
+
+            # 驗證：已勾選應該變 0
+            page.wait_for_timeout(200)
+            if modal.locator("span.is-checked.el-checkbox__input").count() != 0:
+                # 補刀：座標點擊（Element UI 常需要）
+                bb = box.bounding_box()
+                if bb:
+                    page.mouse.click(bb["x"] + bb["width"]/2, bb["y"] + bb["height"]/2)
+                    page.wait_for_timeout(200)
+            log("✅ SiteB：已取消勾選")
+
+
+        page.wait_for_timeout(10_000_000)#debug用
+        
+
+
+        
 def run_site_E(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn, normal_max: str, deluxe_max: str):
 
     def log(msg: str):
@@ -596,7 +728,7 @@ class SiteCApp(ttk.Frame):
         self.nb.pack(fill="x", padx=12, pady=10)
 
         self.tabs = {}
-        self.site_names = ["WM", "SiteB", "SiteC", "SiteD", "SA"]
+        self.site_names = ["WM", "歐博", "SiteC", "SiteD", "SA"]
 
         for site in self.site_names:
             frame = ttk.Frame(self.nb, padding=10)
@@ -759,23 +891,13 @@ class SiteCApp(ttk.Frame):
 
         site = self.nb.tab(current_tab, "text")
 
-        if site in self.running:
-            messagebox.showinfo("正在執行", f"{site} 已在執行中，避免重複啟動。")
-            return
+        # if site in self.running:
+        #     messagebox.showinfo("正在執行", f"{site} 已在執行中，避免重複啟動。")
+        #     return
 
         # ✅ 不要再 disable 全域按鈕
         self.running.add(site)
         self.log(f"▶ 開始：站台={site} ...")
-
-        def worker():
-            try:
-                ...
-            except Exception as e:
-                ...
-            finally:
-                self.running.discard(site)
-                self.log(f"🟩 {site} 執行結束（running={len(self.running)}）")
-
 
         def worker():
             try:
@@ -788,10 +910,13 @@ class SiteCApp(ttk.Frame):
                         raise RuntimeError("WM：請至少勾選一個群組")
 
                     platform = self.platform_var.get()
-                    run_to_userlist_and_fill_WM(
+                    run_site_A(
                         platform, username, password, targets, headless, self.log,
                         process_a, process_b, process_c
                     )
+                elif site == "歐博":
+                    platform = self.platform_var.get()
+                    run_site_B(platform, username, password, targets, headless, self.log)
 
                 else:
                     if site == "SA":
