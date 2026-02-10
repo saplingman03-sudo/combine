@@ -39,6 +39,7 @@ class SiteBApp:
                 "aliases": "merchant_aliases_ldb.json",
             }
         }
+        self.current_platform = "All"
 
         # 動態檔案路徑（會跟平台切換）
         self.cache_file = None
@@ -133,12 +134,12 @@ class SiteBApp:
         ).pack(side="left", padx=10, pady=2)
 
         log_frame = tk.LabelFrame(self.frame, text="🧾 系統日誌")
-        log_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        log_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
         self.log_area = scrolledtext.ScrolledText(
             log_frame,
             width=100,
-            height=20,
+            height=10,
             bg="#f0f0f0"
         )
         self.log_area.pack(fill="both", expand=True, padx=5, pady=5)
@@ -522,9 +523,7 @@ class SiteBApp:
             check = self.im_checked if str(g_code).strip() in self.selected_codes else self.im_unchecked
             self.tree.insert("", "end", values=(check, display_name, g_code, status_icon))
 
-    def filter_games(self, event):
-        """ 搜尋功能：針對所有載入的遊戲進行過濾 """
-        query = self.ent_search.get().lower()
+
     def filter_games(self, event=None):
         query = (self.ent_search.get() or "").lower()
         platform = self.current_platform
@@ -1133,5 +1132,5 @@ class SiteBApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = GameApp(root)
+    app = SiteBApp(root)  # 改這裡
     root.mainloop()

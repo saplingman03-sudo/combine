@@ -6,7 +6,7 @@ from 自動開關遊戲測試 import SiteBApp
 
 def main():
     root = tk.Tk()
-    root.title("五站自動化工具")
+    root.title("自動化工具")
 
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True)
