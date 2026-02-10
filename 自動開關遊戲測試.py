@@ -13,11 +13,13 @@ TEMPLATE_FILE = "templates.json"
 MERCHANT_TEMPLATE_FILE = "merchant_templates.json"   # 商戶群組模板
 MERCHANT_ALIAS_FILE = "merchant_aliases.json"       # 商戶帳號→名稱對照表
 
-class GameApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("遊戲開關 去你媽的小莊手動開關黑奴命")
-        self.root.geometry("900x950")
+class SiteBApp:
+    def __init__(self, parent):
+        self.parent = parent
+        self.frame = tk.Frame(parent)
+        self.frame.pack(fill="both", expand=True)
+        self.root = parent
+
         self.BASE_URLS = {
             "王牌": "https://wpapi.ldjzmr.top/admin",
             "樂多寶": "https://ldbapi.ledb.top/admin",
@@ -66,16 +68,14 @@ class GameApp:
         self.im_unchecked = "☐"
         self.selected_codes = set()  # 全域記住勾選的 code
 
-        self.notebook = ttk.Notebook(root)
+        self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
         self.tab1 = tk.Frame(self.notebook)
         self.tab2 = tk.Frame(self.notebook)
 
         self.notebook.add(self.tab1, text=" ⚙️ 拖曳操作面板 ")
-        self.notebook.add(self.tab2, text=" 🧾 日誌 ")
 
         self.setup_tab1()
-        self.setup_tab2()
     def _apply_platform_files(self):
         p = self.platform_var.get()
         files = self.PLATFORM_FILES.get(p, {})
@@ -131,6 +131,17 @@ class GameApp:
             variable=self.platform_var, value="樂多寶",
             command=on_platform_switch
         ).pack(side="left", padx=10, pady=2)
+
+        log_frame = tk.LabelFrame(self.frame, text="🧾 系統日誌")
+        log_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.log_area = scrolledtext.ScrolledText(
+            log_frame,
+            width=100,
+            height=20,
+            bg="#f0f0f0"
+        )
+        self.log_area.pack(fill="both", expand=True, padx=5, pady=5)
 
 
 
@@ -303,16 +314,6 @@ class GameApp:
                 self.lst_merchants.insert(tk.END, label)
                 self.merchant_view_indexes.append(idx)
 
-
-
-    def setup_tab2(self):
-        log_frame = tk.LabelFrame(self.tab2, text="🧾 系統日誌")
-        log_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.log_area = scrolledtext.ScrolledText(
-            log_frame, width=100, height=30, bg="#f0f0f0"
-        )
-        self.log_area.pack(fill="both", expand=True, padx=5, pady=5)
 
     def edit_merchant_double_click(self, event=None):
         sel = self.lst_merchants.curselection()
