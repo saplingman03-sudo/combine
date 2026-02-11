@@ -10,6 +10,115 @@ from tkinter.scrolledtext import ScrolledText
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+####這裡尚未找到沒有在上面的解決方案
+            #     try:
+            #         # 找到所有表格行
+            #         rows = page.locator("table:visible tr").all()
+                    
+            #         for row in rows:
+            #             try:
+            #                 # 獲取該行的 Min 和 Max 文字
+            #                 cells = row.locator("td").all()
+            #                 if len(cells) < 3:
+            #                     continue
+                                
+            #                 # 檢查是否為 100 / 20,000 這一行
+            #                 min_text = cells[1].inner_text().strip().replace(",", "")
+            #                 max_text = cells[2].inner_text().strip().replace(",", "")
+
+                            
+            #                 if match_uncheck(min_text, max_text, uncheck_set):
+
+
+            #                     # 找到這一行的 checkbox
+            #                     checkbox = row.locator("input[type='checkbox']").first
+                                
+            #                     # 檢查是否已勾選
+            #                     is_checked = checkbox.is_checked()
+                                
+            #                     if is_checked:
+            #                         checkbox.click(force=True)
+            #                         log(f"🧹 已取消勾選：Min={min_text}, Max={max_text}")
+            #                     else:
+            #                         log("ℹ️  偵測中")
+                                
+                                
+            #             except:
+            #                 continue
+                            
+            #     except Exception as e:
+            #         log(f"⚠️  取消勾選 100/20000 時發生錯誤: {e}")
+                
+            #     page.wait_for_timeout(500)
+                
+            #     # === 步驟 2: 勾選 Min=100, Max=10,000 ===
+            #     try:
+            #         rows = page.locator("table:visible tr").all()
+                    
+            #         for row in rows:
+            #             try:
+            #                 cells = row.locator("td").all()
+            #                 if len(cells) < 3:
+            #                     continue
+                                
+            #                 # 檢查是否為 100 / 10,000 這一行
+            #                 min_text = cells[1].inner_text().strip().replace(",", "")
+            #                 max_text = cells[2].inner_text().strip().replace(",", "")
+                            
+            #                 if (min_text, max_text) in check_set:
+            #                     checkbox = row.locator("input[type='checkbox']").first
+                                
+            #                     is_checked = checkbox.is_checked()
+                                
+            #                     if not is_checked:
+            #                         checkbox.click(force=True)
+            #                         log("✅ 已勾選：Min=100, Max=10,000")
+            #                     else:
+            #                         log("ℹ️  Min=100, Max=10,000 原本就已勾選")
+                                
+                               
+            #             except:
+            #                 continue
+                            
+            #     except Exception as e:
+            #         log(f"⚠️  勾選 100/10000 時發生錯誤: {e}")
+                
+            #     page.wait_for_timeout(500)
+
+ 
+
+
+            #     log("🎉 Bet Limit 設定完成")
+            # def click_siteE_confirm(page):
+            #     # 彈窗根節點（你 inspector 上看到的那個 section）
+            #     dialog = page.locator("section.card.member-betlimit-dialog").first
+            #     dialog.wait_for(state="visible", timeout=10000)
+
+            #     # Confirm 就是 submit
+            #     btn = dialog.locator('button[type="submit"]:has-text("Confirm")').first
+
+            #     # 有些站會是大寫/有空白，補一個兜底：只用 type=submit
+            #     if btn.count() == 0:
+            #         btn = dialog.locator('button[type="submit"]').first
+
+            #     btn.wait_for(state="visible", timeout=10000)
+            #     btn.scroll_into_view_if_needed()
+            #     btn.click(force=True)
+            #     log("🚀 已點擊 Confirm 送出設定！")
+
+            # if do_confirm:
+            #     try:
+            #         log("🖱️ SiteE：準備點擊 Confirm（送出 Bet Limit）")
+            #         click_siteE_confirm(page)
+            #         log("✅ SiteE：已點 Confirm")
+            #         page.wait_for_timeout(800)  # 給它一點時間做提交/刷新
+            #     except Exception as e:
+            #         log(f"❌ SiteE：Confirm 點擊失敗：{e}")
+            # else:
+            #     log("⏭️ SiteE：已設定為不送出 Confirm（只勾選不提交）")
+
+
+
 
         # # ✅ 如果 UI 沒填 targets，就用預設測試 target（之後不想要直接註解掉這段）
         # if not target_list:
@@ -617,7 +726,6 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
 
             # 等待彈窗出現
             page.wait_for_timeout(1500)
-            
             # 找到包含 Min/Max 的表格
             title = page.get_by_text("Game Bet Limit Options", exact=False).first
             title.wait_for(state="visible", timeout=10000)
@@ -674,6 +782,8 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
                     uncheck_set = {(uncheck_base_min, m) for m in choices}      # 清同 min 的候選
                     check_set   = {(base_min, target_max)}              # 勾你選的那個
                     log(f"🎯 {game_name} → 目標勾選 {base_min}-{target_max}")
+                
+                
 
              
                 try:
@@ -714,7 +824,7 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
                 except Exception as e:
                     log(f"⚠️  取消勾選 100/20000 時發生錯誤: {e}")
                 
-                page.wait_for_timeout(500)
+
                 
                 # === 步驟 2: 勾選 Min=100, Max=10,000 ===
                 try:
@@ -785,8 +895,7 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
 
                         
 
-            
-        
+
         page.wait_for_timeout(10_000_000)  # debug用，讓瀏覽器保持開啟
 
 

@@ -415,13 +415,8 @@ class SiteAApp:
             dlg_fill(PH_LOGINPW, payload["loginpw"])
             dlg_fill(PH_CONTACT_NAME, payload["contact_name"])
 
-            if auto_confirm:
-                self.write_log("🧾 已填入新增商戶欄位，自動點擊確定")
-                dlg.locator('button:has-text("確定")').click()
-                page.wait_for_timeout(1500)
-                self.write_log("✅ 已完成新增商戶")
-            else:
-                self.write_log("🟡 已填入新增商戶欄位（停在畫面，給你手動按確定）")
+
+            self.write_log("🟡 已填入新增商戶欄位（停在畫面，給你手動按確定）")
 
         except Exception as e:
             self.write_log(f"❌ 發生錯誤：{e}")
