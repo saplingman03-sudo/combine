@@ -61,9 +61,9 @@ class SiteBApp:
         self.game_data_map = {}
         self.all_games_data = []
 
-        # 商戶名稱（別名）與商戶群組模板
-        self.merchant_aliases = self.load_json(MERCHANT_ALIAS_FILE, {})
-        self.merchant_templates = self.load_json(MERCHANT_TEMPLATE_FILE, {})
+        # # 商戶名稱（別名）與商戶群組模板
+        # self.merchant_aliases = self.load_json(MERCHANT_ALIAS_FILE, {})
+        # self.merchant_templates = self.load_json(MERCHANT_TEMPLATE_FILE, {})
 
         self.im_checked = "☑"
         self.im_unchecked = "☐"
@@ -760,9 +760,17 @@ class SiteBApp:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-    def log(self, msg):
-        self.log_area.insert(tk.END, msg + "\n")
-        self.log_area.see(tk.END)
+    def log(self, msg: str):
+        def _append():
+            if not hasattr(self, "log_area"):
+                return
+            self.log_area.insert(tk.END, msg + "\n")
+            self.log_area.see(tk.END)
+        try:
+            self.root.after(0, _append)   # ✅ 不管誰呼叫 log，都丟回主執行緒做 UI 更新
+        except Exception:
+            pass
+
 
     def save_new_template(self):
         name = simpledialog.askstring("模板", "輸入模板名稱:")
