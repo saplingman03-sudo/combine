@@ -14,7 +14,8 @@ import os, sys
 from pathlib import Path
 
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / "pw-browsers")
+# os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / "pw-browsers") 給exe用得
+
 
 UI_STATE_PATH = Path("ui_state.json")
 

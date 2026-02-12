@@ -644,7 +644,273 @@ def run_site_B(platform: str, username: str, password: str, target_list: list,
 
         
 
+def run_site_C(platform: str, username: str, password: str, target_list: list,
+               headless: bool, log_fn, normal_max: str, deluxe_max: str,            do_confirm: bool = True):
+    def log(msg: str):
+        log_fn(msg) # 這樣就不用每次都傳 log_fn 了
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
 
+        log("🔐 SiteC：進入MT後台")
+        page.goto("http://uag533.ofalive99.net ", wait_until="domcontentloaded")
+        page.wait_for_timeout(300)
+        user_input = page.get_by_placeholder("Username")
+        pass_input = page.get_by_placeholder("Password")
+
+        # 兜底
+        if user_input.count() == 0:
+            user_input = page.locator('input[type="text"]').first
+        if pass_input.count() == 0:
+            pass_input = page.locator('input[type="password"]').first
+
+        if user_input.count() == 0 or pass_input.count() == 0:
+            browser.close()
+            raise RuntimeError("找不到登入輸入框（帳號/密碼）")
+
+        # 3) 輸入帳密
+        log("✍️ 輸入帳密…")
+        user_input.click()
+        user_input.fill(username)
+        pass_input.click()
+        pass_input.fill(password)
+        page.get_by_role("button", name="Login").click()
+        log("⏳ SiteC：等待登入成功（出現 Dashboard）...    ")
+
+        page.wait_for_timeout(1000)
+
+        # 點擊「帳號」選單
+        log("📂 點擊「帳號」選單")
+        page.locator('text=帳號').first.click(force=True)
+        page.wait_for_timeout(800)
+
+        # 點擊「用戶管理」
+        log("📂 點擊「用戶管理」")
+        page.locator('text=用戶管理').first.click(force=True)
+        page.wait_for_timeout(2000)
+
+        if not target_list:
+            target_list = ["5d761fddf0b0aa3b891c"]   # ← 不想自動塞就註解這行
+            log(f"🧪 SiteB 使用預設測試 target：{target_list[0]}")
+        # 處理每個 target 帳號
+        for target_account in target_list:
+            log(f"🔎 查詢帳號：{target_account}")
+            
+            # 填入帳號
+            search_input = page.locator('input[type="text"]').first
+            search_input.click()
+            search_input.press("Control+A")
+            search_input.press("Backspace")
+            search_input.fill(target_account)
+            
+            # 點查詢
+            page.locator('button.ant-btn.ant-btn-primary').first.click(force=True)
+            log("✅ 查詢指令已送出！")
+            page.wait_for_timeout(2000)
+            log(f"✅ {target_account} 查詢完成")
+            # 點「限紅組設定」
+            log("🖱️ 點擊「限紅組設定」")
+            page.locator('button:has-text("限紅組設定")').first.click(force=True)
+            page.wait_for_timeout(1500)
+            log("✅ 已進入限紅組設定頁面")
+
+            # === 處理限紅組勾選 ===
+            page.wait_for_timeout(1000)
+
+            # 定義目標限紅組對應關係
+            target_map = {
+                "10000": ("100", "10000"),  
+                "20000": ("100", "20000"),    
+                "5000": ("100", "5000")      
+            }
+
+            if normal_max in target_map:
+                target_min, target_max = target_map[normal_max]
+                log(f"🎯 目標限紅組：最小={target_min}, 最大={target_max}")
+                
+                try:
+                    # 等待彈窗完全載入
+                    page.wait_for_timeout(800)
+                    
+                    # 掃描所有表格行
+                    all_rows = page.locator("tr").all()
+                    log(f"📋 掃描到 {len(all_rows)} 行")
+                    
+                    found = False
+                    for idx, row in enumerate(all_rows):
+                        try:
+                            # 獲取該行的所有單元格
+                            cells = row.locator("td").all()
+                            
+                            # 至少要有 3 個 td
+                            if len(cells) < 3:
+                                continue
+                            
+                            # 讀取最小下注和最大下注
+                            min_text = cells[1].inner_text().strip()
+                            max_text = cells[2].inner_text().strip()
+                            
+                            # 檢查是否為目標
+                            if min_text == target_min and max_text == target_max:
+                                log(f"✅ 找到目標：第 {idx} 行，最小={min_text}, 最大={max_text}")
+                                
+                                # 捲動到該行
+                                row.scroll_into_view_if_needed()
+                                page.wait_for_timeout(300)
+                                
+                                # 找到該行的開關
+                                toggle = row.locator('input[type="checkbox"]').first
+                                
+                                # 如果找不到 checkbox，試 ant-switch
+                                if toggle.count() == 0:
+                                    toggle = row.locator('.ant-switch').first
+                                
+                                if toggle.count() > 0:
+                                    # 檢查是否已開啟
+                                    is_on = False
+                                    try:
+                                        is_on = toggle.is_checked()
+                                    except:
+                                        try:
+                                            classes = toggle.get_attribute("class") or ""
+                                            is_on = "ant-switch-checked" in classes or "checked" in classes
+                                        except:
+                                            pass
+                                    
+                                    if not is_on:
+                                        toggle.click(force=True)
+                                        page.wait_for_timeout(500)
+                                        log(f"✅ 已開啟限紅組：{min_text}-{max_text}")
+                                    else:
+                                        log(f"ℹ️ 限紅組 {min_text}-{max_text} 已經是開啟狀態")
+                                    
+                                    found = True
+                                    break
+                                else:
+                                    log(f"⚠️ 找到目標行但找不到開關元件")
+                                    
+                        except Exception as e:
+                            continue
+                    
+                    if not found:
+                        log(f"❌ 找不到限紅組 {target_min}-{target_max}")
+                        
+                except Exception as e:
+                    log(f"❌ 處理限紅組時發生錯誤: {e}")
+                    log(traceback.format_exc())
+                    
+            else:
+                log("⚠️ 未選擇有效的限紅組（10000/20000/5000）")
+
+            page.wait_for_timeout(800)
+
+            # === 點擊「儲存」按鈕 ===
+            if do_confirm:
+                log("🖱️ 準備點擊「儲存」按鈕...")
+                try:
+                    # 先等一下，確保彈窗穩定
+                    page.wait_for_timeout(1000)
+                    
+                    # 方法1：捲到彈窗內容最底部
+                    dialog_body = page.locator('.ant-modal-body, div[role="dialog"]').first
+                    if dialog_body.count() > 0:
+                        dialog_body.evaluate("(el) => el.scrollTo(0, el.scrollHeight)")
+                        page.wait_for_timeout(500)
+                    
+                    # 方法2：也捲整個頁面
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(500)
+                    
+                    # 找儲存按鈕（根據截圖，是在底部的按鈕）
+                    # 先試最精確的
+                    save_btn = page.locator('button:has-text("儲存"):not(:has-text("取消"))').first
+                    
+                    if save_btn.count() == 0:
+                        # 備用方案1：找所有包含「儲」字的按鈕
+                        save_btn = page.locator('button:has-text("儲")').first
+                    
+                    if save_btn.count() == 0:
+                        # 備用方案2：找底部區域的按鈕
+                        footer_buttons = page.locator('.ant-modal-footer button, .dialog-footer button').all()
+                        for btn in footer_buttons:
+                            try:
+                                text = btn.inner_text()
+                                if "儲" in text or "存" in text or "Save" in text:
+                                    save_btn = btn
+                                    log(f"✅ 在底部找到按鈕：{text}")
+                                    break
+                            except:
+                                continue
+                    
+                    if save_btn and save_btn.count() > 0:
+                        # 確保按鈕完全可見
+                        save_btn.wait_for(state="visible", timeout=5000)
+                        save_btn.scroll_into_view_if_needed()
+                        page.wait_for_timeout(500)
+                        
+                        # 檢查按鈕是否可點擊（沒有 disabled）
+                        is_disabled = save_btn.is_disabled()
+                        if is_disabled:
+                            log("⚠️ 儲存按鈕是 disabled 狀態")
+                        
+                        # 嘗試點擊
+                        try:
+                            save_btn.click(timeout=5000)
+                            log("✅ 已點擊「儲存」（方法1）")
+                        except:
+                            try:
+                                save_btn.click(force=True)
+                                log("✅ 已點擊「儲存」（方法2：force）")
+                            except:
+                                try:
+                                    # 用座標點擊
+                                    box = save_btn.bounding_box()
+                                    if box:
+                                        x = box["x"] + box["width"] / 2
+                                        y = box["y"] + box["height"] / 2
+                                        page.mouse.click(x, y)
+                                        log("✅ 已點擊「儲存」（方法3：座標）")
+                                    else:
+                                        raise Exception("無法取得按鈕位置")
+                                except Exception as e3:
+                                    # 最後一招：JS 點擊
+                                    save_btn.evaluate("(el) => el.click()")
+                                    log("✅ 已點擊「儲存」（方法4：JS）")
+                        
+                        page.wait_for_timeout(2000)
+                        log("✅ 已送出限紅組設定")
+                    else:
+                        log("❌ 找不到儲存按鈕")
+                        
+                        # Debug：列出所有可見的按鈕
+                        all_btns = page.locator('button:visible').all()
+                        log(f"📋 頁面上有 {len(all_btns)} 個可見按鈕：")
+                        for i, btn in enumerate(all_btns):
+                            try:
+                                text = btn.inner_text().strip()
+                                if text:
+                                    log(f"  按鈕 {i+1}: [{text}]")
+                            except:
+                                pass
+                        
+                except Exception as e:
+                    log(f"❌ 點擊儲存時發生錯誤: {e}")
+                    log(traceback.format_exc())
+            else:
+                log("⏭️ 設定為不送出（只勾選不儲存）")
+
+
+        page.wait_for_timeout(10_000_000)  # debug用
+        browser.close()
+
+        
+
+  
+
+
+
+    
         
 def run_site_E(platform: str, username: str, password: str, target_list: list,
                headless: bool, log_fn, normal_max: str, deluxe_max: str,
@@ -998,7 +1264,7 @@ class SiteCApp(ttk.Frame):
         self.nb.pack(fill="x", padx=12, pady=10)
 
         self.tabs = {}
-        self.site_names = ["WM", "歐博", "SiteC", "SiteD", "SA"]
+        self.site_names = ["WM", "歐博", "MT", "SiteD", "SA"]
 
         for site in self.site_names:
             frame = ttk.Frame(self.nb, padding=10)
@@ -1123,6 +1389,29 @@ class SiteCApp(ttk.Frame):
                         variable=self.site_b_do_submit
                     )
                     self.chk_b_submit.grid(row=5, column=1, sticky="w", pady=(6, 0))
+        if site == "MT":
+            ttk.Label(parent, text="限紅組選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
+            
+            opt_mt = ttk.Frame(parent)
+            opt_mt.grid(row=3, column=1, columnspan=3, sticky="w", pady=(6, 0))
+            
+            ttk.Label(opt_mt, text="要勾選的限紅組：").grid(row=0, column=0, sticky="w")
+            var_mt_max = tk.StringVar(value="10000")
+            cb_mt = ttk.Combobox(
+                opt_mt, textvariable=var_mt_max,
+                values=["10000", "20000", "5000"],
+                width=12, state="readonly"
+            )
+            cb_mt.grid(row=0, column=1, padx=8, sticky="w")
+            ttk.Label(opt_mt, text="(100-10,000 / 100-20,000 / 100-5,000)").grid(row=0, column=2, sticky="w")
+            
+            # 儲存開關
+            var_mt_confirm = tk.BooleanVar(value=True)
+            ttk.Checkbutton(opt_mt, text="點擊儲存送出設定", variable=var_mt_confirm)\
+                .grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            
+            self.tabs[site].vars["mt_max"] = var_mt_max
+            self.tabs[site].vars["mt_confirm"] = var_mt_confirm
 
         if site == "SA":
             ttk.Label(parent, text="Bet Limit 選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
@@ -1234,6 +1523,12 @@ class SiteCApp(ttk.Frame):
                     handicap_choice = handicap_choice.get() if handicap_choice else "100_10K"
                     run_site_B(platform, username, password, targets, headless, self.log,
                                handicap_choice=handicap_choice, do_submit=self.site_b_do_submit.get())
+                elif site == "MT":
+                    platform = self.platform_var.get()
+                    mt_max = v.get("mt_max").get() if "mt_max" in v else "10000"
+                    mt_confirm = v.get("mt_confirm").get() if "mt_confirm" in v else True
+                    run_site_C(platform, username, password, targets, headless, self.log,
+                            normal_max=mt_max, deluxe_max="", do_confirm=mt_confirm)
 
                 else:
                     if site == "SA":
