@@ -5,7 +5,7 @@ a = Analysis(
     ['main_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('*.json', '.'), ('*.png', '.')],
+    datas=[('pw-browsers', 'pw-browsers'), ('*.json', '.'), ('*.ico', '.'), ('*.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,7 +32,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['your_logo.ico'],
 )
 coll = COLLECT(
     exe,

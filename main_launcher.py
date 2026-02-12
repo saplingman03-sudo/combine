@@ -7,14 +7,14 @@ from tkinter import ttk
 from 自動創建商戶測試 import SiteAApp
 from 自動開關遊戲測試 import SiteBApp
 from 限紅 import SiteCApp
-from PIL import Image, ImageTk  # <--- 檢查這行有沒有加！！
+from PIL import Image, ImageTk  
 import json
 from pathlib import Path
 import os, sys
 from pathlib import Path
 
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-# os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / "pw-browsers") 給exe用得
+# os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / "pw-browsers") #給exe用得
 
 
 UI_STATE_PATH = Path("ui_state.json")
