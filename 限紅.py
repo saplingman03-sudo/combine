@@ -904,7 +904,234 @@ def run_site_C(platform: str, username: str, password: str, target_list: list,
         page.wait_for_timeout(10_000_000)  # debug用
         browser.close()
 
+def run_site_D(platform: str, username: str, password: str, target_list: list,
+               headless: bool, log_fn, normal_max: str, deluxe_max: str,
+               do_confirm: bool = True):
+    def log(msg: str):
+        log_fn(msg)
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
+
+        log("🔐 SiteD：進入T9後台")
+        page.goto("https://dash.t9cn818.online", wait_until="domcontentloaded")
+        page.wait_for_timeout(2000)
+
+        # 找帳號輸入框（第一個 input）
+        log("✍️ 填入帳號...")
+        user_input = page.locator('input[type="text"]').first
+        if user_input.count() == 0:
+            user_input = page.locator('input.el-input').first
         
+        if user_input.count() == 0:
+            # 用 class 找
+            user_input = page.locator('.el-input__inner').first
+        
+        user_input.wait_for(state="visible", timeout=10000)
+        user_input.click()
+        user_input.fill(username)
+        log(f"✅ 已填入帳號：{username}")
+
+        # 找密碼輸入框（第二個 input 或 type=password）
+        log("✍️ 填入密碼...")
+        pass_input = page.locator('input[type="password"]').first
+        if pass_input.count() == 0:
+            # 備用：找第二個 input
+            pass_input = page.locator('input.el-input__inner').nth(1)
+        
+        pass_input.wait_for(state="visible", timeout=10000)
+        pass_input.click()
+        pass_input.fill(password)
+        log("✅ 已填入密碼")
+
+        page.wait_for_timeout(500)
+
+        # 點登入按鈕（黃色按鈕，文字是「登入」）
+        log("🖱️ 點擊登入按鈕...")
+        login_btn = page.locator('button:has-text("登入")').first
+        
+        if login_btn.count() == 0:
+            # 備用：找黃色按鈕
+            login_btn = page.locator('button.el-button.bg-yellow').first
+        
+        if login_btn.count() == 0:
+            # 再備用：找 type=button 或 submit
+            login_btn = page.locator('button[type="button"], button[type="submit"]').first
+        
+        login_btn.wait_for(state="visible", timeout=10000)
+        login_btn.click(force=True)
+        log("✅ 已點擊登入按鈕")
+
+        # 等待登入成功（URL 變化或出現特定元素）
+        log("⏳ 等待登入成功...")
+        page.wait_for_timeout(3000)
+        
+        # 檢查是否登入成功（可能會跳轉到 dashboard 或 home）
+        try:
+            # 等待 URL 變化
+            page.wait_for_url("**/home", timeout=10000)
+            log("✅ 登入成功（URL 已變化）")
+        except:
+            try:
+                # 或者等待某個登入後才會出現的元素
+                page.wait_for_selector("text=代理商管理系統", timeout=10000)
+                log("✅ 登入成功（偵測到管理系統）")
+            except:
+                log("⚠️ 無法確認登入狀態，繼續執行...")
+
+        log(f"📍 當前 URL: {page.url}")
+
+
+
+        # === 點擊「玩家」選單 ===
+        log("📂 點擊「玩家」選單...")
+        try:
+            # 方法1：直接用文字
+            player_menu = page.locator('text=玩家').first
+            
+            # 如果找不到，可能在側邊欄
+            if player_menu.count() == 0:
+                player_menu = page.locator('.sidebar text=玩家, a:has-text("玩家")').first
+            
+            player_menu.wait_for(state="visible", timeout=10000)
+            player_menu.click(force=True)
+            log("✅ 已點擊「玩家」")
+            page.wait_for_timeout(1500)
+            
+        except Exception as e:
+            log(f"❌ 點擊「玩家」失敗: {e}")
+            raise
+
+        # === 處理每個 target 帳號 ===
+        if not target_list:
+            target_list = ["bada3a98436fe12dbf717a21a6ff90"]  # 測試用，之後可以註解掉
+            log(f"🧪 使用測試 target：{target_list[0]}")
+
+        for target_account in target_list:
+            try:
+                log(f"\n{'='*50}")
+                log(f"🔎 處理帳號：{target_account}")
+                
+                # === 填入搜尋框 ===
+                log("✍️ 填入搜尋框...")
+                
+                # 找可見的 input（排除 hidden）
+                search_input = page.locator('input.el-input:visible').first
+                
+                if search_input.count() == 0:
+                    # 備用1：找 el-input__inner（這是 Element UI 真正的輸入框）
+                    search_input = page.locator('input.el-input__inner:visible').first
+                
+                if search_input.count() == 0:
+                    # 備用2：在搜尋區域找 input
+                    search_input = page.locator('.agentSearchBar input:visible, .search-bar input:visible').first
+                
+                if search_input.count() == 0:
+                    # 備用3：找 type=text 且可見的
+                    search_input = page.locator('input[type="text"]:visible').first
+                
+                if search_input.count() == 0:
+                    log("❌ 找不到可見的搜尋框")
+                    raise RuntimeError("找不到搜尋框")
+                
+                search_input.wait_for(state="visible", timeout=10000)
+                search_input.scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                
+                search_input.click()
+                
+                # 清空舊內容
+                search_input.press("Control+A")
+                search_input.press("Backspace")
+                page.wait_for_timeout(300)
+                
+                # 填入 target
+                search_input.fill(target_account)
+                log(f"✅ 已填入：{target_account}")
+                page.wait_for_timeout(500)
+                
+                # === 點擊搜尋按鈕（放大鏡）===
+                log("🖱️ 點擊搜尋按鈕...")
+                
+                # 方法1：找 filter-item button（根據 DevTools 看到的結構）
+                search_btn = page.locator('.filter-item button').first
+                
+                if search_btn.count() == 0:
+                    # 方法2：找包含 SVG 圖標的按鈕
+                    search_btn = page.locator('button:has(svg)').first
+                
+                if search_btn.count() == 0:
+                    # 方法3：找 el-button
+                    search_btn = page.locator('button.el-button').first
+                
+                if search_btn.count() == 0:
+                    # 方法4：在搜尋框旁邊找按鈕
+                    search_btn = page.locator('.filter-wrap button, .search-bar button').first
+                
+                if search_btn.count() > 0:
+                    search_btn.wait_for(state="visible", timeout=5000)
+                    search_btn.scroll_into_view_if_needed()
+                    page.wait_for_timeout(300)
+                    search_btn.click(force=True)
+                    log("✅ 已點擊搜尋按鈕")
+                else:
+                    # 方法5：直接按 Enter
+                    log("⌨️ 找不到按鈕，嘗試按 Enter...")
+                    search_input.press("Enter")
+                    log("✅ 已按 Enter 送出")
+                
+                page.wait_for_timeout(2000)
+                log("✅ 已送出搜尋，等待結果...")
+                
+                # TODO: 這裡加入後續操作
+                # 例如：點擊搜尋結果、進入詳情、設定限紅等
+                
+                log(f"✅ 帳號 {target_account} 搜尋完成")
+                
+            except Exception as e:
+                log(f"❌ 處理帳號 {target_account} 時發生錯誤: {e}")
+                log(traceback.format_exc())
+                continue
+
+
+            page.wait_for_timeout(1000)
+
+            
+            # === 點擊「遊戲限紅設定」按鈕 ===
+            log("🖱️ 點擊「遊戲限紅設定」...")
+            try:
+                # 方法1：直接用文字找
+                limit_btn = page.locator('button:has-text("遊戲限紅設定")').first
+                
+                if limit_btn.count() == 0:
+                    # 方法2：找黃色按鈕（可能只顯示部分文字）
+                    limit_btn = page.locator('button.bg-yellow:has-text("限紅")').first
+                
+                if limit_btn.count() == 0:
+                    # 方法3：在搜尋結果區域找黃色按鈕
+                    limit_btn = page.locator('.list-item button.bg-yellow, .el-button.bg-yellow').first
+                
+                if limit_btn.count() == 0:
+                    raise RuntimeError("找不到「遊戲限紅設定」按鈕")
+                
+                limit_btn.wait_for(state="visible", timeout=10000)
+                limit_btn.scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                limit_btn.click(force=True)
+                log("✅ 已點擊「遊戲限紅設定」")
+                
+                page.wait_for_timeout(2000)
+                
+                # TODO: 這裡加入限紅設定的後續操作
+                
+            except Exception as e:
+                log(f"❌ 點擊「遊戲限紅設定」失敗: {e}")
+                raise
+
+        page.wait_for_timeout(10_000_000)  # debug用
+        browser.close()
 
   
 
@@ -1264,7 +1491,7 @@ class SiteCApp(ttk.Frame):
         self.nb.pack(fill="x", padx=12, pady=10)
 
         self.tabs = {}
-        self.site_names = ["WM", "歐博", "MT", "SiteD", "SA"]
+        self.site_names = ["WM", "歐博", "MT", "T9", "SA"]
 
         for site in self.site_names:
             frame = ttk.Frame(self.nb, padding=10)
@@ -1365,6 +1592,8 @@ class SiteCApp(ttk.Frame):
             "targets": txt_targets,
             "wm_groups": wm_vars
         }
+
+
         if site == "歐博":
                     ttk.Label(parent, text="Handicap 選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
                     opt_b = ttk.Frame(parent)
@@ -1389,6 +1618,9 @@ class SiteCApp(ttk.Frame):
                         variable=self.site_b_do_submit
                     )
                     self.chk_b_submit.grid(row=5, column=1, sticky="w", pady=(6, 0))
+
+
+
         if site == "MT":
             ttk.Label(parent, text="限紅組選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
             
@@ -1412,6 +1644,17 @@ class SiteCApp(ttk.Frame):
             
             self.tabs[site].vars["mt_max"] = var_mt_max
             self.tabs[site].vars["mt_confirm"] = var_mt_confirm
+
+
+        if site == "T9":
+            var_t9_confirm = tk.BooleanVar(value=True)
+            ttk.Checkbutton(parent, text="T9 走預設流程（包含點 Confirm）", variable=var_t9_confirm)\
+                .grid(row=3, column=1, sticky="w", pady=(6, 0))
+            
+            # ✅ 重要：存到 vars 裡
+            self.tabs[site].vars["t9_confirm"] = var_t9_confirm
+
+
 
         if site == "SA":
             ttk.Label(parent, text="Bet Limit 選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
@@ -1529,6 +1772,13 @@ class SiteCApp(ttk.Frame):
                     mt_confirm = v.get("mt_confirm").get() if "mt_confirm" in v else True
                     run_site_C(platform, username, password, targets, headless, self.log,
                             normal_max=mt_max, deluxe_max="", do_confirm=mt_confirm)
+                
+                elif site == "T9":
+                    platform = self.platform_var.get()
+                    t9_confirm = v.get("t9_confirm").get() if "t9_confirm" in v else True
+                    run_site_D(platform, username, password, targets, headless, self.log,
+                            normal_max="", deluxe_max="", do_confirm=t9_confirm)
+
 
                 else:
                     if site == "SA":
