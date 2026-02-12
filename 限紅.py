@@ -1130,6 +1130,119 @@ def run_site_D(platform: str, username: str, password: str, target_list: list,
                 log(f"❌ 點擊「遊戲限紅設定」失敗: {e}")
                 raise
 
+            log("📋 等待限紅設定頁面載入...")
+            page.wait_for_timeout(1500)
+            
+            # === T9 遊戲限紅設定 ===
+            log("🎯 開始設定遊戲限紅...")
+            
+            # 確認彈窗已開啟
+            dialog = page.locator('text=遊戲限紅設定').first
+            dialog.wait_for(state="visible", timeout=10000)
+            log("✅ 限紅設定彈窗已開啟")
+            
+            log("📋 等待限紅設定頁面載入...")
+            page.wait_for_timeout(1500)
+            
+            # === T9 遊戲限紅設定 ===
+            log("🎯 開始設定遊戲限紅...")
+            
+            # 確認彈窗已開啟
+            dialog = page.locator('text=遊戲限紅設定').first
+            dialog.wait_for(state="visible", timeout=10000)
+            log("✅ 限紅設定彈窗已開啟")
+            
+            # 從參數取得目標金額
+            target_max = normal_max
+            if not target_max or target_max not in ["5000", "10000", "20000"]:
+                target_max = "10000"
+            
+            log(f"🎯 目標最大限紅：{target_max}")
+            
+            # 找到所有「最大限紅」的輸入框（應該有3個）
+            max_inputs = page.locator('input.el-input__inner:visible').all()
+            
+            # 過濾出真正的最大限紅輸入框（通常是偶數位置：1, 3, 5）
+            target_inputs = []
+            for i, inp in enumerate(max_inputs):
+                try:
+                    # 檢查 input 的值，最大限紅通常比較大
+                    val = inp.input_value()
+                    if val and int(val.replace(',', '')) >= 10000:
+                        target_inputs.append(inp)
+                except:
+                    # 如果無法取得值，用位置判斷（奇數位是最大限紅）
+                    if i % 2 == 1:
+                        target_inputs.append(inp)
+            
+            # 如果上面邏輯找不到，就用簡單的方法：取第 1, 3, 5 個
+            if len(target_inputs) < 3:
+                target_inputs = [max_inputs[1], max_inputs[3], max_inputs[5]] if len(max_inputs) >= 6 else max_inputs
+            
+            log(f"📋 找到 {len(target_inputs)} 個最大限紅輸入框")
+            
+            # 三個類別的名稱（用於 log）
+            categories = ["真人1類", "區塊鏈1類", "區塊鏈2類"]
+            
+            # 處理每個輸入框
+            for idx in range(min(3, len(target_inputs))):
+                category = categories[idx] if idx < len(categories) else f"類別{idx+1}"
+                
+                try:
+                    log(f"\n--- 處理 {category} ---")
+                    
+                    max_input = target_inputs[idx]
+                    
+                    # 清空並填入新值
+                    max_input.scroll_into_view_if_needed()
+                    page.wait_for_timeout(200)
+                    max_input.click()
+                    page.wait_for_timeout(200)
+                    
+                    # 清空（多種方法確保清空）
+                    max_input.press("Control+A")
+                    max_input.press("Backspace")
+                    page.wait_for_timeout(200)
+                    max_input.fill("")
+                    page.wait_for_timeout(200)
+                    
+                    # 填入新值
+                    max_input.fill(target_max)
+                    log(f"✅ 已設定最大限紅：{target_max}")
+                    page.wait_for_timeout(500)
+                    
+                    # === 點擊「儲存為預設值」按鈕 ===
+                    if do_confirm:
+                        log(f"🖱️ 點擊 {category} 的「儲存為預設值」...")
+                        
+                        try:
+                            # 從當前 input 往後找按鈕
+                            save_btn = max_input.locator('xpath=following::button[1]').first
+                            
+                            if save_btn.count() == 0:
+                                # 備用：找所有按鈕，取第 idx 個
+                                all_save_btns = page.locator('button:has-text("儲存為預設值")').all()
+                                if idx < len(all_save_btns):
+                                    save_btn = all_save_btns[idx]
+                            
+                            if save_btn and save_btn.count() > 0:
+                                save_btn.scroll_into_view_if_needed()
+                                page.wait_for_timeout(300)
+                                save_btn.click(force=True)
+                                log(f"✅ 已點擊 {category} 的「儲存為預設值」")
+                                page.wait_for_timeout(1000)
+                            else:
+                                log(f"⚠️ 找不到 {category} 的儲存按鈕")
+                                
+                        except Exception as e:
+                            log(f"❌ 點擊儲存按鈕失敗: {e}")
+                    
+                except Exception as e:
+                    log(f"❌ 處理 {category} 時發生錯誤: {e}")
+                    log(traceback.format_exc())
+                    continue
+            
+
         page.wait_for_timeout(10_000_000)  # debug用
         browser.close()
 
@@ -1647,11 +1760,27 @@ class SiteCApp(ttk.Frame):
 
 
         if site == "T9":
-            var_t9_confirm = tk.BooleanVar(value=True)
-            ttk.Checkbutton(parent, text="T9 走預設流程（包含點 Confirm）", variable=var_t9_confirm)\
-                .grid(row=3, column=1, sticky="w", pady=(6, 0))
+            ttk.Label(parent, text="限紅設定").grid(row=3, column=0, sticky="nw", pady=(6, 0))
             
-            # ✅ 重要：存到 vars 裡
+            opt_t9 = ttk.Frame(parent)
+            opt_t9.grid(row=3, column=1, columnspan=3, sticky="w", pady=(6, 0))
+            
+            ttk.Label(opt_t9, text="最大限紅：").grid(row=0, column=0, sticky="w")
+            var_t9_max = tk.StringVar(value="10000")
+            cb_t9 = ttk.Combobox(
+                opt_t9, textvariable=var_t9_max,
+                values=["5000", "10000", "20000"],
+                width=12, state="readonly"
+            )
+            cb_t9.grid(row=0, column=1, padx=8, sticky="w")
+            ttk.Label(opt_t9, text="(5,000 / 10,000 / 20,000)").grid(row=0, column=2, sticky="w")
+            
+            # 儲存開關
+            var_t9_confirm = tk.BooleanVar(value=True)
+            ttk.Checkbutton(opt_t9, text="點擊「儲存為預設值」", variable=var_t9_confirm)\
+                .grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            
+            self.tabs[site].vars["t9_max"] = var_t9_max
             self.tabs[site].vars["t9_confirm"] = var_t9_confirm
 
 
@@ -1775,9 +1904,10 @@ class SiteCApp(ttk.Frame):
                 
                 elif site == "T9":
                     platform = self.platform_var.get()
+                    t9_max = v.get("t9_max").get() if "t9_max" in v else "10000"
                     t9_confirm = v.get("t9_confirm").get() if "t9_confirm" in v else True
                     run_site_D(platform, username, password, targets, headless, self.log,
-                            normal_max="", deluxe_max="", do_confirm=t9_confirm)
+                            normal_max=t9_max, deluxe_max="", do_confirm=t9_confirm)
 
 
                 else:
