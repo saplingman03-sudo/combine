@@ -459,7 +459,10 @@ def run_site_A(platform: str, username: str, password: str, target_list: list,
 
 
         browser.close()
-def run_site_B(platform: str, username: str, password: str, target_list: list, headless: bool, log_fn):
+def run_site_B(platform: str, username: str, password: str, target_list: list,
+               headless: bool, log_fn,
+               handicap_choice: str = "100_10K",
+               do_submit: bool = True):
     def log(msg: str):
         log_fn(msg)
 
@@ -469,113 +472,176 @@ def run_site_B(platform: str, username: str, password: str, target_list: list, h
         page = context.new_page()
 
         log("🔐 SiteB")
-        page.goto("https://ams.allbetgaming.net ", wait_until="domcontentloaded")
+        page.goto("https://ams.allbetgaming.net", wait_until="domcontentloaded")
         page.wait_for_timeout(2000)
 
         log("🌐 SiteB English...")
-
-        # 1) 點「简体中文」下拉（用 id 最穩）
         label = page.locator('div.current-language-label').first
         label.wait_for(state="visible", timeout=10000)
-
         clickable = label.locator(
             "xpath=ancestor::a[1] | ancestor::button[1] | ancestor::div[1]"
         )
         clickable.click(force=True)
-
-        # 2) 點 English 尚未完成
-        page.locator(
-            ".language-item:has-text('English')"
-        ).first.click(force=True)
-
+        page.locator(".language-item:has-text('English')").first.click(force=True)
         page.wait_for_timeout(600)
         log("✅ SiteB：語言已切換為 English")
 
         inputs = page.locator("input.el-input__inner")
-
         user_input = inputs.nth(0)
         pass_input = inputs.nth(1)
-
         user_input.click()
         user_input.fill(username)
-
         pass_input.click()
         pass_input.fill(password)
 
-        # 點 Login
         login_span = page.locator("span:has-text('Login')").first
         login_span.click(force=True)
-
-        # 或 Enter 補刀
         pass_input.press("Enter")
-
-        # 等登入成功
         page.wait_for_timeout(2000)
-
 
         page.get_by_role("button", name="Players").click()
 
-        # ✅ 如果 UI 沒填 targets，就用預設測試 target（之後不想要直接註解掉這段）
         if not target_list:
-            target_list = ["ab1ecca08d3a7f15wrb"]   # ← 不想自動塞就註解這行
+            target_list = ["ab1ecca08d3a7f15wrb"]
             log(f"🧪 SiteB 使用預設測試 target：{target_list[0]}")
 
-        #開始迴圈
         for target_account in target_list:
+            log(f"\n{'='*50}")
             log(f"🔎 SiteB 搜尋：{target_account}")
+
             inputs = page.locator("input.el-input")
-            target_input = inputs.first  # 如果不是第一個，改 nth(1)
-
+            target_input = inputs.first
             target_input.wait_for(state="visible", timeout=10000)
-
             target_input.click()
             target_input.press("Control+A")
             target_input.press("Backspace")
             target_input.type(target_account, delay=50)
-            
+
             search_icon = page.locator("svg:has(title:has-text('search'))").first
             search_icon.wait_for(state="visible", timeout=10000)
             search_icon.click(force=True)
             log("✅ SiteB：已送出搜尋")
             page.wait_for_timeout(2000)
 
-            #找到edit按鈕
-            label = page.get_by_text("Handicap(Bet Limit)").first
-            label.wait_for(state="visible", timeout=10000)
-
-            btn = label.locator("xpath=following::button[.//span[normalize-space()='Edit']][1]").first
+            # 找到 Handicap(Bet Limit) 旁的 Edit
+            label_el = page.get_by_text("Handicap(Bet Limit)").first
+            label_el.wait_for(state="visible", timeout=10000)
+            btn = label_el.locator("xpath=following::button[.//span[normalize-space()='Edit']][1]").first
             btn.scroll_into_view_if_needed()
             btn.click(force=True)
+            log("✅ SiteB：已點 Edit Handicap")
+            page.wait_for_timeout(1500)
 
-            
-
-
-            # 鎖彈窗（用標題，不猜 class）
+            # 鎖定彈窗
             modal = page.get_by_text("Edit Handicap(Bet Limit)", exact=False)\
                         .locator("xpath=ancestor::div[3]").first
             modal.wait_for(state="visible", timeout=10000)
+            log("✅ Edit Handicap 彈窗已開啟")
 
-            # 找到「已勾選」的 input 容器
-            checked_input = modal.locator("span.is-checked.el-checkbox__input").first
-            checked_input.wait_for(state="visible", timeout=10000)
-
-            # 點裡面的框框（真正可點）
-            box = checked_input.locator("span.el-checkbox__inner").first
-            box.scroll_into_view_if_needed()
-            box.click(force=True)
-
-            # 驗證：已勾選應該變 0
-            page.wait_for_timeout(200)
-            if modal.locator("span.is-checked.el-checkbox__input").count() != 0:
-                # 補刀：座標點擊（Element UI 常需要）
-                bb = box.bounding_box()
-                if bb:
-                    page.mouse.click(bb["x"] + bb["width"]/2, bb["y"] + bb["height"]/2)
-                    page.wait_for_timeout(200)
-            log("✅ SiteB：已取消勾選")
+            # ─── 步驟 1：取消所有已勾選的 checkbox ───
+            # ─── 步驟 1：取消所有已勾選的 checkbox ───
+            log("🧹 步驟 1：取消所有已勾選…")
+            unchecked_count = page.evaluate("""() => {
+                let count = 0;
+                document.querySelectorAll('span.is-checked.el-checkbox__input').forEach(span => {
+                    const inner = span.querySelector('.el-checkbox__inner');
+                    if (inner) { inner.click(); count++; }
+                });
+                return count;
+            }""")
+            log(f"   🧹 已取消 {unchecked_count} 個勾選")
+            page.wait_for_timeout(500)
 
 
-        page.wait_for_timeout(10_000_000)#debug用
+
+            # ─── 步驟 2：勾選目標 ───
+            log(f"✅ 步驟 2：勾選 → {handicap_choice}")
+            try:
+                # 用 JS 在彈窗內精確找到目標行的 checkbox 並點擊
+                result = page.evaluate("""(choice) => {
+                    const rows = document.querySelectorAll('tr');
+                    for (const row of rows) {
+                        const tds = row.querySelectorAll('td');
+                        for (const td of tds) {
+                            if (td.textContent.trim() === choice) {
+                                const cb = row.querySelector('.el-checkbox__inner');
+                                if (cb) { cb.click(); return 'clicked'; }
+                                return 'no_checkbox';
+                            }
+                        }
+                    }
+                    return 'not_found';
+                }""", handicap_choice)
+
+                if result == "clicked":
+                    log(f"   ✅ 已勾選：{handicap_choice}")
+                elif result == "no_checkbox":
+                    log(f"   ⚠️ 找到行但沒有 checkbox")
+                else:
+                    log(f"   ❌ 找不到 {handicap_choice} 這一行")
+            except Exception as e:
+                log(f"   ❌ 勾選失敗: {e}")
+
+            page.wait_for_timeout(500)
+
+
+            page.locator('button:has-text("Next")').first.click(force=True)
+
+            log(f"✅ SiteB：已點 Next")
+            log(f"✅ 步驟 2：勾選 → V_2K_20K")
+            try:
+                # 用 JS 在彈窗內精確找到目標行的 checkbox 並點擊
+                result = page.evaluate("""(choice) => {
+                    const rows = document.querySelectorAll('tr');
+                    for (const row of rows) {
+                        const tds = row.querySelectorAll('td');
+                        for (const td of tds) {
+                            if (td.textContent.trim() === choice) {
+                                const cb = row.querySelector('.el-checkbox__inner');
+                                if (cb) { cb.click(); return 'clicked'; }
+                                return 'no_checkbox';
+                            }
+                        }
+                    }
+                    return 'not_found';
+                }""", "V_2K_20K")
+
+                if result == "clicked":
+                    log(f"   ✅ 已勾選：V_2K_20K")
+                elif result == "no_checkbox":
+                    log(f"   ⚠️ 找到行但沒有 checkbox")
+                else:
+                    log(f"   ❌ 找不到 V_2K_20K 這一行")
+            except Exception as e:
+                log(f"   ❌ 勾選失敗: {e}")
+
+            page.locator('button:has-text("Next")').first.click(force=True)
+            log(f"✅ SiteB：已點 Next（第二次）")
+
+            password_input = page.locator("input[placeholder='Operator Password']")
+            password_input.fill("Asdf1234=")  # 這個密碼是固定的（目前沒看到 UI 可以改）
+            log("✅ 已填入 Operator Password")
+
+            page.wait_for_timeout(300)
+
+            if do_submit:
+                    log("🖱️ SiteB：準備點擊 Submit...")
+                    submit_button = page.locator('button:has-text("Submit")')
+                    submit_button.first.click(force=True)
+                    log("✅ SiteB：已點擊 Submit 送出設定！")
+            else:
+                log("⏭️ SiteB：設定為『不送出 Submit』，跳過最後一步。")
+
+            # submit_button = page.locator('button:has-text("Submit")')
+            # submit_button.first.click(force=True)
+
+
+
+        page.wait_for_timeout(10_000_000)  # debug用
+        browser.close()
+
+
+
         
 
 
@@ -1033,6 +1099,31 @@ class SiteCApp(ttk.Frame):
             "targets": txt_targets,
             "wm_groups": wm_vars
         }
+        if site == "歐博":
+                    ttk.Label(parent, text="Handicap 選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
+                    opt_b = ttk.Frame(parent)
+                    opt_b.grid(row=3, column=1, columnspan=3, sticky="w", pady=(6, 0))
+
+                    ttk.Label(opt_b, text="要勾選的 Handicap：").grid(row=0, column=0, sticky="w")
+                    var_handicap = tk.StringVar(value="100_10K")
+                    cb_handicap = ttk.Combobox(
+                        opt_b, textvariable=var_handicap,
+                        values=["100_5K", "100_10K", "100_20K"],
+                        width=12, state="readonly"
+                    )
+                    cb_handicap.grid(row=0, column=1, padx=8, sticky="w")
+                    self.tabs[site].vars["handicap_choice"] = var_handicap
+                        # 1. 定義變數 (放在 self.vars 之類的地方)
+                    self.site_b_do_submit = tk.BooleanVar(value=True) 
+
+                    # 2. 建立 UI 組件 (放在你其他 Checkbutton 旁邊)
+                    self.chk_b_submit = tk.Checkbutton(
+                        parent, 
+                        text="開啟 Site B 自動提交 (Submit)", 
+                        variable=self.site_b_do_submit
+                    )
+                    self.chk_b_submit.grid(row=5, column=1, sticky="w", pady=(6, 0))
+
         if site == "SA":
             ttk.Label(parent, text="Bet Limit 選項").grid(row=3, column=0, sticky="nw", pady=(6, 0))
 
@@ -1077,9 +1168,11 @@ class SiteCApp(ttk.Frame):
     # log
     # -------------------------
     def log(self, msg: str):
-        self.txt.insert("end", msg + "\n")
-        self.txt.see("end")
-        self.update_idletasks()
+                from datetime import datetime
+                ts = datetime.now().strftime("%H:%M:%S")
+                self.txt.insert("end", f"[{ts}] {msg}\n")
+                self.txt.see("end")
+                self.update_idletasks()
 
     # -------------------------
     # 執行：依目前分頁跑對應站台
@@ -1137,7 +1230,10 @@ class SiteCApp(ttk.Frame):
 
                 elif site == "歐博":
                     platform = self.platform_var.get()
-                    run_site_B(platform, username, password, targets, headless, self.log)
+                    handicap_choice = v.get("handicap_choice")
+                    handicap_choice = handicap_choice.get() if handicap_choice else "100_10K"
+                    run_site_B(platform, username, password, targets, headless, self.log,
+                               handicap_choice=handicap_choice, do_submit=self.site_b_do_submit.get())
 
                 else:
                     if site == "SA":
