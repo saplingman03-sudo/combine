@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['app.py'],
+    ['main_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('*.json', '.'), ('*.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['your_logo.ico'],
 )
 coll = COLLECT(
     exe,

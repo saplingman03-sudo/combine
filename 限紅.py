@@ -1246,6 +1246,7 @@ class SiteCApp(ttk.Frame):
                                 normal_max, deluxe_max, do_confirm=do_confirm)
 
                   
+                
 
                     else:
                         self.log(f"🟨 {site} 尚未實作：先只做 SA")

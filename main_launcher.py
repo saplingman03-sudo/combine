@@ -10,6 +10,12 @@ from 限紅 import SiteCApp
 from PIL import Image, ImageTk  # <--- 檢查這行有沒有加！！
 import json
 from pathlib import Path
+import os, sys
+from pathlib import Path
+
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / "pw-browsers")
+
 UI_STATE_PATH = Path("ui_state.json")
 
 def load_ui_state():
