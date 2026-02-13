@@ -1,6 +1,6 @@
 ﻿from logging import log
 import os
-import platform
+import platform as sys_platform
 import re
 import threading
 import traceback
@@ -133,8 +133,6 @@ import requests
 #        input("⏸ 已暫停（畫面保留中），處理完請按 Enter 繼續或關閉…") debug時需要
 
 # ==================== 爬蟲相關配置 ====================
-API_BASE_URL = "https://wpapi.ldjzmr.top/master"
-BEARER_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvbWFzdGVyL2xvZ2luIiwiaWF0IjoxNzcwNDI5NjIxLCJleHAiOjE4MDE5NjU2MjEsIm5iZiI6MTc3MDQyOTYyMSwianRpIjoicXpGSUx5c296eHZPczhyTSIsInN1YiI6IjExIiwicHJ2IjoiMTg4ODk5NDM5MDUwZTVmMzc0MDliMThjYzZhNDk1NjkyMmE3YWIxYiJ9.FJwCCTCn6CmghjL6gCTxyVDwa9-UZH25GiHT_JrIhYg"
 # 配置檔路徑
 CONFIG_PATH = Path("config_cache_siteC.json")  # ✅ 改成獨立的 config
 # ===== DEBUG 測試用預設 target（不想用就註解掉這行）=====
@@ -164,11 +162,19 @@ def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
 # ==================== 爬蟲函數 ====================
-def fetch_machines_from_api(page: int = 1, page_size: int = 100, log_fn=None):
+def fetch_machines_from_api(platform: str, page: int = 1, page_size: int = 100, log_fn=None):
     """從 API 獲取機器列表"""
     def log(msg):
         if log_fn:
             log_fn(msg)
+
+
+    if platform =="wp":
+        API_BASE_URL = "https://wpapi.ldjzmr.top/master"
+        BEARER_TOKEN="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvbWFzdGVyL2xvZ2luIiwiaWF0IjoxNzcwNDI5NjIxLCJleHAiOjE4MDE5NjU2MjEsIm5iZiI6MTc3MDQyOTYyMSwianRpIjoicXpGSUx5c296eHZPczhyTSIsInN1YiI6IjExIiwicHJ2IjoiMTg4ODk5NDM5MDUwZTVmMzc0MDliMThjYzZhNDk1NjkyMmE3YWIxYiJ9.FJwCCTCn6CmghjL6gCTxyVDwa9-UZH25GiHT_JrIhYg"
+    elif platform =="ldb":
+        API_BASE_URL = "https://ldbapi.ledb.top/master"
+        BEARER_TOKEN="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2xkYmFwaS5sZWRiLnRvcC9tYXN0ZXIvbG9naW4iLCJpYXQiOjE3NzAzOTYyNzAsImV4cCI6MTgwMTkzMjI3MCwibmJmIjoxNzcwMzk2MjcwLCJqdGkiOiJJVXhtR29lbzZlVVM5N2pSIiwic3ViIjoiMSIsInBydiI6IjE4ODg5OTQzOTA1MGU1ZjM3NDA5YjE4Y2M2YTQ5NTY5MjJhN2FiMWIifQ.uCGoZOMrMABWHf1pdzU-JioHiJ2cOUAa7bdwhF1C0x8"
     
     url = f"{API_BASE_URL}/machine"
     headers = {
@@ -233,7 +239,7 @@ def parse_machine_data(api_response, log_fn=None):
     return machines
 
 
-def crawl_all_machines(log_fn=None):
+def crawl_all_machines(platform: str, log_fn=None):
     """爬取所有機器的帳號資料"""
     def log(msg):
         if log_fn:
@@ -246,7 +252,8 @@ def crawl_all_machines(log_fn=None):
     
     while True:
         log(f"📄 正在抓取第 {page} 頁...")
-        api_response = fetch_machines_from_api(page=page, page_size=page_size, log_fn=log_fn)
+        api_response = fetch_machines_from_api(platform, page=page, page_size=page_size, log_fn=log_fn)
+
         
         if not api_response:
             log("❌ 無法獲取資料")
@@ -1734,6 +1741,13 @@ class SiteCApp(ttk.Frame):
         # ✅ 綁定即時搜尋過濾
         self.all_merchants = ["請選取"]  # 儲存完整商戶列表
         self.merchant_combo.bind('<KeyRelease>', self._filter_merchants)
+        # ✅ 放進「商戶篩選」裡面
+        self.btn_crawl = ttk.Button(
+            merchant_frame,
+            text="爬取機器帳號",
+            command=self.on_crawl_accounts
+        )
+        self.btn_crawl.pack(side="left", padx=10, pady=4)
 
         # ✅ 新增「填入帳號」按鈕
         self.btn_fill_accounts = ttk.Button(
@@ -1768,8 +1782,7 @@ class SiteCApp(ttk.Frame):
         self.btn_run = ttk.Button(btnfrm, text="執行目前分頁", command=self.on_run_current_tab)
         self.btn_run.pack(side="left")
         # ✅ 新增爬蟲按鈕
-        self.btn_crawl = ttk.Button(btnfrm, text="爬取機器帳號", command=self.on_crawl_accounts)
-        self.btn_crawl.pack(side="left", padx=8)
+
 
         self.var_headless = tk.BooleanVar(value=False)
         ttk.Checkbutton(btnfrm, text="幹您娘", variable=self.var_headless)\
@@ -2184,7 +2197,7 @@ class SiteCApp(ttk.Frame):
         self.log(f"   MT: {len(mt_accounts)} 筆")
         self.log(f"   T9: {len(t9_accounts)} 筆")
         self.log(f"   SA: {len(sa_accounts)} 筆")
-        
+
 
     def on_crawl_accounts(self):
         """爬取所有機器帳號"""
@@ -2192,8 +2205,11 @@ class SiteCApp(ttk.Frame):
         self.log("🕷️ 開始爬取機器帳號...")
         
         def worker():
+            
             try:
-                machines = crawl_all_machines(log_fn=self.log)
+                platform_code = self.platform_var.get()
+                machines = crawl_all_machines(platform=platform_code, log_fn=self.log)
+
                 
                 if machines:
                     self.log("\n✅ 爬取完成！")
@@ -2216,6 +2232,7 @@ class SiteCApp(ttk.Frame):
             except Exception as e:
                 self.log(f"❌ 爬取失敗: {e}")
                 self.log(traceback.format_exc())
+
         
         threading.Thread(target=worker, daemon=True).start()
 
