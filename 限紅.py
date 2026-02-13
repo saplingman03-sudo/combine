@@ -10,6 +10,7 @@ from tkinter.scrolledtext import ScrolledText
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+import requests
 ####這裡尚未找到沒有在上面的解決方案
             #     try:
             #         # 找到所有表格行
@@ -131,7 +132,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 #        input("⏸ 已暫停（畫面保留中），處理完請按 Enter 繼續或關閉…") debug時需要
 
-
+# ==================== 爬蟲相關配置 ====================
+API_BASE_URL = "https://wpapi.ldjzmr.top/master"
+BEARER_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL3dwYXBpLmxkanptci50b3AvbWFzdGVyL2xvZ2luIiwiaWF0IjoxNzcwNDI5NjIxLCJleHAiOjE4MDE5NjU2MjEsIm5iZiI6MTc3MDQyOTYyMSwianRpIjoicXpGSUx5c296eHZPczhyTSIsInN1YiI6IjExIiwicHJ2IjoiMTg4ODk5NDM5MDUwZTVmMzc0MDliMThjYzZhNDk1NjkyMmE3YWIxYiJ9.FJwCCTCn6CmghjL6gCTxyVDwa9-UZH25GiHT_JrIhYg"
+# 配置檔路徑
 CONFIG_PATH = Path("config_cache_siteC.json")  # ✅ 改成獨立的 config
 # ===== DEBUG 測試用預設 target（不想用就註解掉這行）=====
 DEBUG_DEFAULT_TARGET = "ab1ecca08d3a7f15wrb"
@@ -158,6 +162,121 @@ def load_config() -> dict:
 
 def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+# ==================== 爬蟲函數 ====================
+def fetch_machines_from_api(page: int = 1, page_size: int = 100, log_fn=None):
+    """從 API 獲取機器列表"""
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+    
+    url = f"{API_BASE_URL}/machine"
+    headers = {
+        "Authorization": f"Bearer {BEARER_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    params = {"pagenum": page, "pagesize": page_size}
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        if log_fn:
+            log(f"❌ API 請求失敗: {e}")
+        return None
+
+
+def parse_machine_data(api_response, log_fn=None):
+    """解析 API 回傳的機器資料"""
+    if not api_response:
+        return []
+    
+    machines = []
+    items = []
+    
+    if isinstance(api_response, dict) and "data" in api_response:
+        data = api_response["data"]
+        if isinstance(data, dict) and "data" in data:
+            items = data["data"]
+    
+    for item in items:
+        try:
+            machine_id = str(item.get("id", ""))
+            machine_name = item.get("name", "")
+            brand = item.get("brand", {})
+            brand_name = brand.get("name", "") if brand else ""
+            user = item.get("user", {})
+            
+            if user:
+                wm_id = user.get("WM_id") or ""
+                ab_id = user.get("AB_id") or ""
+                mt_id = user.get("MT_id") or ""
+                t9_id = user.get("T9_id") or ""
+                sa_id = user.get("SA_id") or ""
+            else:
+                wm_id = ab_id = mt_id = t9_id = sa_id = ""
+            
+            machines.append({
+                "機器ID": machine_id,
+                "商戶名稱": brand_name,
+                "機器名稱": machine_name,
+                "WM帳號": wm_id,
+                "AB帳號": ab_id,
+                "MT帳號": mt_id,
+                "T9帳號": t9_id,
+                "SA帳號": sa_id,
+            })
+        except:
+            continue
+    
+    return machines
+
+
+def crawl_all_machines(log_fn=None):
+    """爬取所有機器的帳號資料"""
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+    
+    log("🚀 開始爬取機器帳號...")
+    all_machines = []
+    page = 1
+    page_size = 1000  # API 最大支援 1000，盡量減少請求次數
+    
+    while True:
+        log(f"📄 正在抓取第 {page} 頁...")
+        api_response = fetch_machines_from_api(page=page, page_size=page_size, log_fn=log_fn)
+        
+        if not api_response:
+            log("❌ 無法獲取資料")
+            break
+        
+        machine_data = parse_machine_data(api_response, log_fn=log_fn)
+        
+        if not machine_data:
+            log(f"📌 已到達最後一頁（共 {page} 頁）")
+            break
+        
+        log(f"✅ 第 {page} 頁：{len(machine_data)} 筆")
+        all_machines.extend(machine_data)
+        
+        if len(machine_data) < page_size:
+            break
+        
+        page += 1
+    
+    # 統計
+    wm_count = sum(1 for m in all_machines if m.get("WM帳號"))
+    ab_count = sum(1 for m in all_machines if m.get("AB帳號"))
+    mt_count = sum(1 for m in all_machines if m.get("MT帳號"))
+    t9_count = sum(1 for m in all_machines if m.get("T9帳號"))
+    sa_count = sum(1 for m in all_machines if m.get("SA帳號"))
+    
+    log(f"\n✅ 總共 {len(all_machines)} 筆")
+    log(f"📊 WM:{wm_count} AB:{ab_count} MT:{mt_count} T9:{t9_count} SA:{sa_count}")
+    
+    return all_machines
 
 
 
@@ -1597,6 +1716,25 @@ class SiteCApp(ttk.Frame):
             variable=self.platform_var, value="ldb",
             command=self._on_platform_switch
         ).pack(side="left", padx=10, pady=4)
+        # ===== 商戶篩選 =====
+        merchant_frame = ttk.LabelFrame(self, text="商戶篩選")
+        merchant_frame.pack(fill="x", padx=12, pady=(10, 0))
+
+        ttk.Label(merchant_frame, text="選擇商戶：").pack(side="left", padx=10, pady=4)
+
+        self.merchant_var = tk.StringVar(value="請選取")
+        self.merchant_combo = ttk.Combobox(
+            merchant_frame, 
+            textvariable=self.merchant_var,
+            values=["請選取"],
+            width=30
+            # ← 不要 state="readonly"，這樣就可以輸入搜尋了
+        )
+        self.merchant_combo.pack(side="left", padx=10, pady=4)
+        # ✅ 綁定即時搜尋過濾
+        self.all_merchants = ["請選取"]  # 儲存完整商戶列表
+        self.merchant_combo.bind('<KeyRelease>', self._filter_merchants)
+        
 
 
         # ===== Notebook =====
@@ -1621,6 +1759,9 @@ class SiteCApp(ttk.Frame):
 
         self.btn_run = ttk.Button(btnfrm, text="執行目前分頁", command=self.on_run_current_tab)
         self.btn_run.pack(side="left")
+        # ✅ 新增爬蟲按鈕
+        self.btn_crawl = ttk.Button(btnfrm, text="爬取機器帳號", command=self.on_crawl_accounts)
+        self.btn_crawl.pack(side="left", padx=8)
 
         self.var_headless = tk.BooleanVar(value=False)
         ttk.Checkbutton(btnfrm, text="幹您娘", variable=self.var_headless)\
@@ -1641,7 +1782,53 @@ class SiteCApp(ttk.Frame):
         if p not in self.cfg:
             self.cfg[p] = {}
         return p, self.cfg[p]
-
+    
+    def _filter_merchants(self, event):
+        """即時過濾商戶列表（修正版）"""
+        typed = self.merchant_var.get()
+        
+        # 如果按下 Enter，選中第一個結果（排除提示訊息）
+        if event.keysym == 'Return':
+            current_values = self.merchant_combo['values']
+            if current_values and len(current_values) > 0:
+                first = current_values[0]
+                if not first.startswith("（"):  # 不是提示訊息
+                    self.merchant_var.set(first)
+                    self.merchant_combo.selection_clear()
+            return
+        
+        # 如果按下 Escape，清空並恢復全部列表
+        if event.keysym == 'Escape':
+            self.merchant_var.set("全部")
+            self.merchant_combo['values'] = self.all_merchants
+            return
+        
+        # 如果清空了，恢復全部列表
+        if not typed or typed == "全部":
+            self.merchant_combo['values'] = self.all_merchants
+            return
+        
+        # ✅ 修正：移除空格後搜尋，不區分大小寫
+        typed_clean = typed.replace(" ", "").lower()
+        
+        # ✅ 過濾邏輯：移除商戶名稱的空格後比對
+        filtered = []
+        for merchant in self.all_merchants:
+            if merchant == "全部":
+                continue  # 跳過「全部」選項
+            merchant_clean = merchant.replace(" ", "").lower()
+            if typed_clean in merchant_clean:
+                filtered.append(merchant)
+        
+        # 如果沒有結果，顯示提示
+        if not filtered:
+            filtered = ["（找不到符合的商戶）"]
+        
+        # ✅ Bug 修正：永遠保留「全部」在列表最前面
+        if filtered[0] != "（找不到符合的商戶）":
+            filtered = ["全部"] + filtered
+        
+        self.merchant_combo['values'] = filtered
     def _on_platform_switch(self):
         p, pcfg = self._get_platform_cfg()
 
@@ -1939,6 +2126,38 @@ class SiteCApp(ttk.Frame):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def on_crawl_accounts(self):
+        """爬取所有機器帳號"""
+        self.log("=" * 60)
+        self.log("🕷️ 開始爬取機器帳號...")
+        
+        def worker():
+            try:
+                machines = crawl_all_machines(log_fn=self.log)
+                
+                if machines:
+                    self.log("\n✅ 爬取完成！")
+                    self.machines_data = machines  # 儲存結果
+                    
+                    # ✅ 提取所有商戶名稱並更新下拉選單
+                    merchants = set()
+                    for m in machines:
+                        brand = m.get("商戶名稱", "")
+                        if brand:
+                            merchants.add(brand)
+                    
+                    merchant_list = ["請選取"] + sorted(list(merchants))
+                    self.all_merchants = merchant_list  # ✅ 加上這一行！
+                    self.merchant_combo['values'] = merchant_list
+                    self.log(f"📋 發現 {len(merchants)} 個商戶")
+                else:
+                    self.log("⚠️ 沒有抓取到資料")
+                    
+            except Exception as e:
+                self.log(f"❌ 爬取失敗: {e}")
+                self.log(traceback.format_exc())
+        
+        threading.Thread(target=worker, daemon=True).start()
 
 if __name__ == "__main__":
     SiteCApp().mainloop()
