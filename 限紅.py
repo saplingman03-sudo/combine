@@ -1734,6 +1734,14 @@ class SiteCApp(ttk.Frame):
         # ✅ 綁定即時搜尋過濾
         self.all_merchants = ["請選取"]  # 儲存完整商戶列表
         self.merchant_combo.bind('<KeyRelease>', self._filter_merchants)
+
+        # ✅ 新增「填入帳號」按鈕
+        self.btn_fill_accounts = ttk.Button(
+            merchant_frame, 
+            text="填入該商戶帳號到各分頁", 
+            command=self.on_fill_merchant_accounts
+        )
+        self.btn_fill_accounts.pack(side="left", padx=10, pady=4)
         
 
 
@@ -2125,6 +2133,58 @@ class SiteCApp(ttk.Frame):
                 self.btn_run.config(state="normal")
 
         threading.Thread(target=worker, daemon=True).start()
+
+
+    def on_fill_merchant_accounts(self):
+        """將選中商戶的帳號填入各分頁"""
+        selected_merchant = self.merchant_var.get()
+        
+        if selected_merchant == "全部" or selected_merchant.startswith("（"):
+            messagebox.showwarning("請選擇商戶", "請先選擇一個具體的商戶")
+            return
+        
+        if not hasattr(self, 'machines_data') or not self.machines_data:
+            messagebox.showwarning("無資料", "請先點擊「爬取機器帳號」")
+            return
+        
+        # 篩選出該商戶的所有機器
+        merchant_machines = [m for m in self.machines_data if m.get("商戶名稱") == selected_merchant]
+        
+        if not merchant_machines:
+            messagebox.showwarning("找不到", f"找不到商戶「{selected_merchant}」的機器")
+            return
+        
+        # 提取各平台帳號
+        wm_accounts = [m["WM帳號"] for m in merchant_machines if m.get("WM帳號")]
+        ab_accounts = [m["AB帳號"] for m in merchant_machines if m.get("AB帳號")]
+        mt_accounts = [m["MT帳號"] for m in merchant_machines if m.get("MT帳號")]
+        t9_accounts = [m["T9帳號"] for m in merchant_machines if m.get("T9帳號")]
+        sa_accounts = [m["SA帳號"] for m in merchant_machines if m.get("SA帳號")]
+        
+        # 填入各分頁
+        self.tabs["WM"].vars["targets"].delete("1.0", "end")
+        self.tabs["WM"].vars["targets"].insert("1.0", "\n".join(wm_accounts))
+        
+        self.tabs["歐博"].vars["targets"].delete("1.0", "end")
+        self.tabs["歐博"].vars["targets"].insert("1.0", "\n".join(ab_accounts))
+        
+        self.tabs["MT"].vars["targets"].delete("1.0", "end")
+        self.tabs["MT"].vars["targets"].insert("1.0", "\n".join(mt_accounts))
+        
+        self.tabs["T9"].vars["targets"].delete("1.0", "end")
+        self.tabs["T9"].vars["targets"].insert("1.0", "\n".join(t9_accounts))
+        
+        self.tabs["SA"].vars["targets"].delete("1.0", "end")
+        self.tabs["SA"].vars["targets"].insert("1.0", "\n".join(sa_accounts))
+        
+        # 顯示統計
+        self.log(f"✅ 已填入商戶「{selected_merchant}」的帳號：")
+        self.log(f"   WM: {len(wm_accounts)} 筆")
+        self.log(f"   歐博: {len(ab_accounts)} 筆")
+        self.log(f"   MT: {len(mt_accounts)} 筆")
+        self.log(f"   T9: {len(t9_accounts)} 筆")
+        self.log(f"   SA: {len(sa_accounts)} 筆")
+        
 
     def on_crawl_accounts(self):
         """爬取所有機器帳號"""
