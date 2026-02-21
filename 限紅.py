@@ -402,6 +402,10 @@ def run_site_A(platform: str, username: str, password: str, target_list: list,
 
         log(f"✅ 命中 frames: {hit_frames}")
         # 找第一個命中 frame
+        if not target_list:
+            target_list = ["960a7156033dcd28"]   # ← 不想自動塞就註解這行
+            log(f"🧪 SiteB 使用預設測試 target：{target_list[0]}")
+
         for target_account in target_list:
             try:
                 target_frame = None
@@ -467,6 +471,11 @@ def run_site_A(platform: str, username: str, password: str, target_list: list,
                 log("✅ 已點擊 Edit，進入編輯頁")
                 page.wait_for_timeout(4000)
                 log("已等待4秒")
+                
+
+                #開始作業限紅
+
+
                 def find_frame_containing(page):
                     """
                     找出包含 Code / Handicap / Baccarat 的 iframe
@@ -491,6 +500,51 @@ def run_site_A(platform: str, username: str, password: str, target_list: list,
                     return None
                 frame = find_frame_containing(page)
                 
+                # ====== 插入這段：掃描並 log 所有 checkbox 狀態 ======
+                def scan_checkbox_status(frame, log):
+                    log("🔍 開始掃描 checkbox 狀態...")
+                    
+                    target_codes = [
+                        "3", "4", "21", "22", "30", "31", "32",
+                        "7", "8", "23", "24", "33", "34", "35",
+                        "12", "13", "25", "26", "42", "254", "43",
+                        "16", "17", "27", "28", "45", "255", "46",
+                        "57", "58", "172", "243", "256",
+                    ]
+                    
+                    results = frame.evaluate("""
+                        (codes) => {
+                            return codes.map(code => {
+                                const inp = document.querySelector(`input#limitset_${code}`);
+                                if (!inp) return { code: code, found: false, checked: false };
+                                return { code: code, found: true, checked: inp.checked };
+                            });
+                        }
+                    """, target_codes)
+                    
+                    checked   = [r for r in results if r['checked']]
+                    unchecked = [r for r in results if not r['checked'] and r['found']]
+                    notfound  = [r for r in results if not r['found']]
+                    
+                    log(f"📊 共掃描 {len(results)} 個 code")
+                    log(f"✅ 已勾選（{len(checked)} 個）：")
+                    for r in checked:
+                        log(f"   ✓ code={r['code']}")
+                    
+                    log(f"⬜ 未勾選（{len(unchecked)} 個）：")
+                    for r in unchecked:
+                        log(f"   □ code={r['code']}")
+                    
+                    if notfound:
+                        log(f"❓ 找不到（{len(notfound)} 個）：")
+                        for r in notfound:
+                            log(f"   ? code={r['code']}")
+
+                scan_checkbox_status(frame, log)
+
+                
+                # ====== 掃描結束，之後繼續你原本的邏輯 ======
+        
                 if not frame:
                     raise RuntimeError("找不到包含 Code / Handicap 的 iframe")
                 log("✅ 找到 Code/Handicap 的 iframe")
@@ -512,6 +566,42 @@ def run_site_A(platform: str, username: str, password: str, target_list: list,
                 if process_group_c:
                     groups_to_process["群組 5K (3, 7, 12, 16, 57)"] = groups["群組 5K (3, 7, 12, 16, 57)"]
 
+                def scan_and_uncheck(frame, log):
+                    all_codes = [
+                        "3", "4", "21", "22", "30", "31", "32",
+                        "7", "8", "23", "24", "33", "34", "35",
+                        "12", "13", "25", "26", "42", "254", "43",
+                        "16", "17", "27", "28", "45", "255", "46",
+                        "57", "58", "172", "243", "256",
+                    ]
+                    
+                    # 先用 JS 讀取哪些已勾選
+                    results = frame.evaluate("""
+                        (codes) => {
+                            return codes.map(code => {
+                                const inp = document.querySelector(`input#limitset_${code}`);
+                                if (!inp) return { code: code, found: false, checked: false };
+                                return { code: code, found: true, checked: inp.checked };
+                            });
+                        }
+                    """, all_codes)
+                    
+                    # 只對已勾選的用原本的點擊邏輯取消
+                    log("🧹 步驟1：取消所有已勾選...")
+                    for r in results:
+                        if not r['checked']:
+                            continue
+                        code = r['code']
+                        try:
+                            code_badge = frame.locator(f"xpath=//*[normalize-space(text())='{code}']").first
+                            code_badge.wait_for(state="visible", timeout=5000)
+                            box = code_badge.locator("xpath=preceding::span[1]").first
+                            click_target = box.locator("xpath=..").first
+                            click_target.click(force=True)
+                            log(f"  🧹 取消 code={code}")
+                        except Exception as e:
+                            log(f"  ❌ code={code} 取消失敗: {e}")
+                scan_and_uncheck(frame, log)
                 for group_name, codes in groups_to_process.items():
                     log(f"\n--- 正在處理 {group_name} ---")
                     
@@ -1547,7 +1637,66 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
 
                 log(f"🔄 正在處理遊戲：{game_name}")
                 page.get_by_role("listitem").get_by_text(game_name, exact=True).click()
-                page.wait_for_timeout(500)
+                page.wait_for_timeout(1000)
+                # ✅ 印出當前 active pane id 和所有行
+                active_pane_id = page.evaluate("() => document.querySelector('.tab-pane.active')?.id")
+                log(f"🔍 active pane id: {active_pane_id}")
+
+                all_rows = page.evaluate(f"""
+                    () => {{
+                        const rows = document.querySelectorAll('#{active_pane_id} .betlimit-content table tr');
+                        return Array.from(rows).map((row, idx) => {{
+                            const cells = row.querySelectorAll('td');
+                            const checkbox = row.querySelector('input[type="checkbox"]');
+                            if (cells.length < 3) return null;
+                            return {{
+                                idx: idx,
+                                min: cells[1].innerText.trim(),
+                                max: cells[2].innerText.trim(),
+                                checked: checkbox ? checkbox.checked : null
+                            }};
+                        }}).filter(r => r !== null);
+                    }}
+                """)
+                for r in all_rows:
+                    log(f"  [{r['idx']}] min={r['min']} max={r['max']} checked={r['checked']}")
+                # 等待表格 row 數量穩定再開始
+                page.wait_for_function("""
+                    () => document.querySelectorAll('.tab-pane.active .betlimit-content table tr').length > 10
+                """, timeout=5000)
+                page.wait_for_timeout(300)  # 再多等一點讓 checkbox 狀態也載入
+                count = page.locator(".betlimit-content").count()
+                log(f"🔍 .betlimit-content 數量: {count}")
+
+                tr_count = page.locator(".betlimit-content table tr").count()
+                log(f"🔍 tr 數量: {tr_count}")
+
+                # 如果 tr=0，試試其他 selector
+                tr_count2 = page.locator(".tab-pane.active table tr").count()
+                log(f"🔍 .tab-pane.active tr 數量: {tr_count2}")
+                page.evaluate("document.querySelector('.betlimit-content').scrollTop = 0")
+                page.wait_for_timeout(200)
+
+                raw = page.evaluate("""
+                    () => {
+                        const rows = document.querySelectorAll('.tab-pane.active .betlimit-content table tr');
+                        return Array.from(rows).slice(0, 5).map((row, idx) => {
+                            const cells = row.querySelectorAll('td');
+                            const checkbox = row.querySelector('input[type="checkbox"]');
+                            return {
+                                index: idx,
+                                cellCount: cells.length,
+                                cell0: cells[0] ? cells[0].innerText.trim() : 'N/A',
+                                cell1: cells[1] ? cells[1].innerText.trim() : 'N/A',
+                                cell2: cells[2] ? cells[2].innerText.trim() : 'N/A',
+                                hasCheckbox: !!checkbox,
+                                checked: checkbox ? checkbox.checked : null
+                            };
+                        });
+                    }
+                """)
+                for r in raw:
+                    log(f"🧪 row{r['index']}: cells={r['cellCount']} | {r['cell0']} | {r['cell1']} | {r['cell2']} | cb={r['hasCheckbox']} checked={r['checked']}")
 
                 NORMAL_CHOICES = {"10000", "20000", "5000"}  # 想加 5000 就加
                 DELUXE_CHOICES = {"10000", "20000", "5000"}
@@ -1561,7 +1710,6 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
                             return True
                     return False
                 if game_name == "Deluxe Blackjack":
-                    uncheck_set = {("200", m) for m in DELUXE_CHOICES}   # 先清掉同 min 候選
                     check_set   = {("200", deluxe_max)}                  # 再勾你選的
                     log(f"🎯 特殊處理：{game_name} → 勾 200-{deluxe_max}")
                 else:
@@ -1584,77 +1732,92 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
                 
 
              
+                # 替換原本的 rows 迴圈，改用 JS 一次取全部資料
                 try:
-                    # 找到所有表格行
-                    rows = page.locator("table:visible tr").all()
+                    # 用 JS 直接從 DOM 讀取所有行的資料，不受 scroll 位置影響
+                    all_rows_data = page.evaluate("""
+                        () => {
+                            const rows = document.querySelectorAll('.tab-pane.active .betlimit-content table tr');
+                            return Array.from(rows).map((row, idx) => {
+                                const cells = row.querySelectorAll('td');
+                                const checkbox = row.querySelector('input[type="checkbox"]');
+                                if (cells.length < 3 || !checkbox) return null;
+                                return {
+                                    index: idx,
+                                    min: cells[1].innerText.trim().replace(/,/g, ''),
+                                    max: cells[2].innerText.trim().replace(/,/g, ''),
+                                    checked: checkbox.checked
+                                };
+                            }).filter(r => r !== null);
+                        }
+                    """)
                     
-                    for row in rows:
-                        try:
-                            # 獲取該行的 Min 和 Max 文字
-                            cells = row.locator("td").all()
-                            if len(cells) < 3:
-                                continue
-                                
-                            # 檢查是否為 100 / 20,000 這一行
-                            min_text = cells[1].inner_text().strip().replace(",", "")
-                            max_text = cells[2].inner_text().strip().replace(",", "")
+                    for row_data in all_rows_data:
+                        min_text = row_data['min']
+                        max_text = row_data['max']
+                        is_checked = row_data['checked']
+                        row_index = row_data['index']
+                        
+                        if match_uncheck(min_text, max_text, uncheck_set):
+                            log(f"🔍 Min={min_text}, Max={max_text} → checked={is_checked}")
+                            if is_checked:
+                                # 用 JS 直接點擊，不需要 scroll
+                                page.evaluate(f"""
+                                    () => {{
+                                        const rows = document.querySelectorAll('.tab-pane.active .betlimit-content table tr');
+                                        const checkbox = rows[{row_index}].querySelector('input[type="checkbox"]');
+                                        if (checkbox) checkbox.click();
+                                    }}
+                                """)
+                                page.wait_for_timeout(100)
+                                log(f"🧹 已取消勾選：Min={min_text}, Max={max_text}")
+                            else:
+                                log(f"⬜ 未勾選，跳過：Min={min_text}, Max={max_text}")
 
-                            
-                            if match_uncheck(min_text, max_text, uncheck_set):
-
-
-                                # 找到這一行的 checkbox
-                                checkbox = row.locator("input[type='checkbox']").first
-                                
-                                # 檢查是否已勾選
-                                is_checked = checkbox.is_checked()
-                                
-                                if is_checked:
-                                    checkbox.click(force=True)
-                                    log(f"🧹 已取消勾選：Min={min_text}, Max={max_text}")
-                                else:
-                                    log("ℹ️  偵測中")
-                                
-                                
-                        except:
-                            continue
-                            
                 except Exception as e:
-                    log(f"⚠️  取消勾選 100/20000 時發生錯誤: {e}")
-                
+                    log(f"⚠️ 取消勾選時發生錯誤: {e}")
 
-                
-                # === 步驟 2: 勾選 Min=100, Max=10,000 ===
+
                 try:
-                    rows = page.locator("table:visible tr").all()
+                    all_rows_data = page.evaluate("""
+                        () => {
+                            const rows = document.querySelectorAll('.tab-pane.active .betlimit-content table tr');
+                            return Array.from(rows).map((row, idx) => {
+                                const cells = row.querySelectorAll('td');
+                                const checkbox = row.querySelector('input[type="checkbox"]');
+                                if (cells.length < 3 || !checkbox) return null;
+                                return {
+                                    index: idx,
+                                    min: cells[1].innerText.trim().replace(/,/g, ''),
+                                    max: cells[2].innerText.trim().replace(/,/g, ''),
+                                    checked: checkbox.checked
+                                };
+                            }).filter(r => r !== null);
+                        }
+                    """)
                     
-                    for row in rows:
-                        try:
-                            cells = row.locator("td").all()
-                            if len(cells) < 3:
-                                continue
-                                
-                            # 檢查是否為 100 / 10,000 這一行
-                            min_text = cells[1].inner_text().strip().replace(",", "")
-                            max_text = cells[2].inner_text().strip().replace(",", "")
-                            
-                            if (min_text, max_text) in check_set:
-                                checkbox = row.locator("input[type='checkbox']").first
-                                
-                                is_checked = checkbox.is_checked()
-                                
-                                if not is_checked:
-                                    checkbox.click(force=True)
-                                    log("✅ 已勾選：Min=100, Max=10,000")
-                                else:
-                                    log("ℹ️  Min=100, Max=10,000 原本就已勾選")
-                                
-                               
-                        except:
-                            continue
-                            
+                    for row_data in all_rows_data:
+                        min_text = row_data['min']
+                        max_text = row_data['max']
+                        is_checked = row_data['checked']
+                        row_index = row_data['index']
+                        
+                        if (min_text, max_text) in check_set:
+                            if not is_checked:
+                                page.evaluate(f"""
+                                    () => {{
+                                        const rows = document.querySelectorAll('.tab-pane.active .betlimit-content table tr');
+                                        const checkbox = rows[{row_index}].querySelector('input[type="checkbox"]');
+                                        if (checkbox) checkbox.click();
+                                    }}
+                                """)
+                                page.wait_for_timeout(100)
+                                log(f"✅ 已勾選：Min={min_text}, Max={max_text}")
+                            else:
+                                log(f"ℹ️ 原本就已勾選：Min={min_text}, Max={max_text}")
+
                 except Exception as e:
-                    log(f"⚠️  勾選 100/10000 時發生錯誤: {e}")
+                    log(f"⚠️ 勾選時發生錯誤: {e}")
                 
                 page.wait_for_timeout(500)
 
@@ -1662,6 +1825,7 @@ def run_site_E(platform: str, username: str, password: str, target_list: list,
 
 
                 log("🎉 Bet Limit 設定完成")
+                
             def click_siteE_confirm(page):
                 # 彈窗根節點（你 inspector 上看到的那個 section）
                 dialog = page.locator("section.card.member-betlimit-dialog").first
@@ -1888,23 +2052,21 @@ class SiteCApp(ttk.Frame):
         wm_vars = None
         if site == "WM":
             ttk.Label(parent, text="WM 群組").grid(row=3, column=0, sticky="w", pady=(6, 0))
-            var_c = tk.BooleanVar(value=True)
-            var_a = tk.BooleanVar(value=True)
-            var_b = tk.BooleanVar(value=True)
+            
+            var_group = tk.StringVar(value="群組 20K")
+            cb_group = ttk.Combobox(
+                parent, textvariable=var_group,
+                values=["群組 5K", "群組 10K", "群組 20K"],
+                width=20, state="readonly"
+            )
+            cb_group.grid(row=3, column=1, sticky="w", pady=(6, 0))
 
-            rowbox = ttk.Frame(parent)
-            rowbox.grid(row=3, column=1, sticky="w", pady=(6, 0))
-            ttk.Checkbutton(rowbox, text="群組 5K", variable=var_c).pack(side="left")
-            ttk.Checkbutton(rowbox, text="群組 10K", variable=var_a).pack(side="left", padx=10)
-            ttk.Checkbutton(rowbox, text="群組 20K", variable=var_b).pack(side="left")
-
-            # ✅ 新增：Confirm 開關
             var_do_confirm = tk.BooleanVar(value=True)
             row_confirm = ttk.Frame(parent)
             row_confirm.grid(row=4, column=1, sticky="w", pady=(6, 0))
             ttk.Checkbutton(row_confirm, text="點 Confirm 送出設定", variable=var_do_confirm).pack(side="left")
 
-            wm_vars = (var_a, var_b, var_c, var_do_confirm)
+            wm_vars = (var_group, var_do_confirm)
 
         # 把變數存起來，on_run 讀得到
         self.tabs[site].vars = {
@@ -2081,14 +2243,13 @@ class SiteCApp(ttk.Frame):
         def worker():
             try:
                 if site == "WM":
-                    var_a, var_b, var_c, var_do_confirm = v["wm_groups"]
-                    process_a = var_a.get()
-                    process_b = var_b.get()
-                    process_c = var_c.get()
+                    var_group, var_do_confirm = v["wm_groups"]
+                    group_choice = var_group.get()
                     do_confirm = var_do_confirm.get()
 
-                    if not (process_a or process_b or process_c):
-                        raise RuntimeError("WM：請至少勾選一個群組")
+                    process_a = "10K" in group_choice
+                    process_b = "20K" in group_choice
+                    process_c = "5K" in group_choice
 
                     platform = self.platform_var.get()
                     run_site_A(

@@ -9,7 +9,8 @@ import threading
 from openpyxl.styles import Alignment, Border, Side, Font, PatternFill
 import json
 import os
-
+import aiohttp
+import asyncio
 # ============================================================
 # 王牌財務工具 V2.1
 # 功能：
